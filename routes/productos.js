@@ -1054,7 +1054,9 @@ function mapPositionForSearch(position) {
     'derecha': 'Derecho', // NUEVO
     'der': 'Derecho',
     'ambos_lados': '(Izquierdo|Derecho|Bilateral)', // NUEVO - regex para ambos
-    'bilateral': '(Izquierdo|Derecho|Bilateral)' // NUEVO
+    'bilateral': '(Izquierdo|Derecho|Bilateral)', // NUEVO
+    'izquierda': '(izquierda y derecha|derecha y izquierda|izq y der|izq y derecha|izq y izquierda)',
+    'derecha': '(izquierda y derecha)' 
   };
   
   return positionMap[position] || position;
