@@ -795,63 +795,61 @@ function parseNaturalQuery(query) {
   return { freeText: normalized };
 }
 
-// 🏗 CONSTRUIR PIPELINE DE BÚSQUEDA
+
+// 🏗 CONSTRUIR PIPELINE DE BÚSQUEDA MEJORADO - CORREGIDO
 function buildSearchPipeline(parsedQuery, limit, offset) {
   const pipeline = [];
   
   if (parsedQuery.freeText) {
-    // ✅ FORMATEAR QUERY INTELIGENTEMENTE
     const formatted = formatearParaBusqueda(parsedQuery.freeText);
     const searchText = parsedQuery.freeText.trim();
     
     console.log('🎯 [FORMATO] Query formateada:', formatted);
     
-    // ✅ CONSTRUIR CONDICIONES DE BÚSQUEDA
+    // ✅ ESTRATEGIA: USAR $OR CON MÚLTIPLES $MATCH EN LUGAR DE UNO GRANDE
     const searchConditions = [];
     
-    // 1. BÚSQUEDA EXACTA CON ÍNDICE COMPUESTO (máxima prioridad)
-    if (formatted.categoria || formatted.posicion || formatted.marca || formatted.modelo) {
-      const compoundMatch = {};
-      if (formatted.categoria) compoundMatch.categoria = formatted.categoria;
-      if (formatted.posicion) compoundMatch["detalles_tecnicos.Posición de la pieza"] = formatted.posicion;
-      if (formatted.marca) compoundMatch["aplicaciones.marca"] = formatted.marca;
-      if (formatted.modelo) compoundMatch["aplicaciones.modelo"] = formatted.modelo;
+    // 1. BÚSQUEDA CON ÍNDICE COMPUESTO (máxima prioridad)
+    if (formatted.categoria && formatted.posicion && formatted.marca && formatted.modelo) {
+      const compoundMatch = {
+        categoria: formatted.categoria,
+        "detalles_tecnicos.Posición de la pieza": formatted.posicion,
+        "aplicaciones.marca": formatted.marca,
+        "aplicaciones.modelo": formatted.modelo
+      };
       if (formatted.version) {
         compoundMatch["aplicaciones.version"] = { $regex: formatted.version, $options: 'i' };
       }
-      
       searchConditions.push(compoundMatch);
     }
     
-    // 2. CÓDIGO EXACTO
+    // 2. BÚSQUEDAS SIMPLES CON ÍNDICES EXISTENTES
     searchConditions.push(
+      // Código exacto (usa índice codigo_1)
       { codigo: searchText },
-      { codigo: { $regex: `^${searchText}`, $options: 'i' } }
-    );
-    
-    // 3. EQUIVALENCIAS
-    searchConditions.push(
+      { codigo: { $regex: `^${searchText}`, $options: 'i' } },
+      
+      // Equivalencias (usa índice idx_equivalencias_codigo)
       { "equivalencias.codigo": searchText },
-      { "equivalencias.codigo": { $regex: searchText, $options: 'i' } }
-    );
-    
-    // 4. BÚSQUEDA DE TEXTO COMPLETO
-    if (searchText.length > 2) {
-      searchConditions.push({ $text: { $search: searchText } });
-    }
-    
-    // 5. BÚSQUEDAS REGEX GENERALES
-    searchConditions.push(
-      { nombre: { $regex: searchText, $options: 'i' } },
-      { categoria: { $regex: searchText, $options: 'i' } },
+      { "equivalencias.codigo": { $regex: searchText, $options: 'i' } },
+      
+      // Aplicaciones (usa índices de aplicaciones)
       { "aplicaciones.marca": { $regex: searchText, $options: 'i' } },
-      { "aplicaciones.modelo": { $regex: searchText, $options: 'i' } }
+      { "aplicaciones.modelo": { $regex: searchText, $options: 'i' } },
+      
+      // Categoría (usa idx_categoria)
+      { categoria: { $regex: searchText, $options: 'i' } }
     );
+    
+    // 3. BÚSQUEDA EN NOMBRE (sin $text por ahora)
+    if (searchText.length > 2) {
+      searchConditions.push({ nombre: { $regex: searchText, $options: 'i' } });
+    }
     
     pipeline.push({ $match: { $or: searchConditions } });
     
   } else {
-    // ✅ BÚSQUEDA ESTRUCTURADA (mantener lógica original)
+    // ✅ BÚSQUEDA ESTRUCTURADA (mantener)
     const conditions = [];
     
     if (parsedQuery.product) {
@@ -865,10 +863,8 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     
     if (parsedQuery.brand && parsedQuery.model) {
       conditions.push({
-        $and: [
-          { "aplicaciones.marca": { $regex: parsedQuery.brand, $options: 'i' } },
-          { "aplicaciones.modelo": { $regex: parsedQuery.model, $options: 'i' } }
-        ]
+        "aplicaciones.marca": { $regex: parsedQuery.brand, $options: 'i' },
+        "aplicaciones.modelo": { $regex: parsedQuery.model, $options: 'i' }
       });
     }
     
@@ -877,40 +873,24 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     });
   }
   
-  // ✅ SCORING INTELIGENTE
+  // ✅ SCORING SIMPLIFICADO
   pipeline.push({
     $addFields: {
       relevanceScore: {
         $add: [
-          // Código exacto = 1000 puntos
+          // Código exacto = 1000
           { $cond: [{ $eq: ["$codigo", parsedQuery.freeText || ""] }, 1000, 0] },
           
-          // Equivalencia exacta = 900 puntos
+          // Equivalencia exacta = 900
           { $cond: [{ $in: [parsedQuery.freeText || "", "$equivalencias.codigo"] }, 900, 0] },
           
-          // Texto completo = textScore * 100
-          { $cond: [
-            { $gt: [{ $ifNull: [{ $meta: "textScore" }, 0] }, 0] },
-            { $multiply: [{ $meta: "textScore" }, 100] },
-            0
-          ]},
-          
-          // Índice compuesto usado = 800 puntos
-          { $cond: [
-            { $and: [
-              { $ne: ["$categoria", null] },
-              { $ne: ["$detalles_tecnicos.Posición de la pieza", null] }
-            ]},
-            800, 0
-          ]},
-          
-          // Nombre contiene = 300 puntos
+          // Nombre contiene = 300
           { $cond: [
             { $regexMatch: { input: "$nombre", regex: parsedQuery.freeText || "", options: "i" } },
             300, 0
           ]},
           
-          // Categoría = 200 puntos
+          // Categoría = 200
           { $cond: [
             { $regexMatch: { input: "$categoria", regex: parsedQuery.freeText || "", options: "i" } },
             200, 0
@@ -920,14 +900,10 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     }
   });
   
-  // ✅ ORDENAR POR RELEVANCIA
+  // ✅ ORDENAR Y PAGINAR
   pipeline.push({ $sort: { relevanceScore: -1, codigo: 1 } });
-  
-  // ✅ PAGINACIÓN
   if (offset > 0) pipeline.push({ $skip: offset });
   pipeline.push({ $limit: limit });
-  
-  // ✅ LIMPIAR RESULTADO
   pipeline.push({ $project: { relevanceScore: 0, _id: 0 } });
   
   return pipeline;
