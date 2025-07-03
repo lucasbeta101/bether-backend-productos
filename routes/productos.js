@@ -799,7 +799,43 @@ function parseNaturalQuery(query) {
 
   // ✅ NUEVOS PATRONES ESPECÍFICOS PARA TUS CASOS
   const enhancedPatterns = [
+    {
+      pattern: /^(amortiguador|amortiguadores|pastilla|pastillas|disco|discos|embrague|embragues|rotula|rotulas|rótula|rótulas|brazo|brazos|extremo|extremos|bieleta|bieletas|biela|bielas|axial|axiales|homocinetica|homocinéticas|homocinética|junta|juntas|rodamiento|rodamientos|ruleman|rulemanes|maza|mazas|buje|bujes|semieje|semiejes|eje|ejes|soporte|soportes|parrilla|parrillas|cazoleta|cazoletas|barra|barras|caja|cajas|bomba|bombas|freno|frenos|clutch|campana|campanas|suspension|suspensión|neumática|neumatica)\s+(del|de|para|de\s+la|del\s+auto|de\s+mi|para\s+el|para\s+mi)\s+([a-z]+)\s+([a-z0-9]+(?:\s+[a-z0-9]+)*)(?:\s+(delantero|delanteros|trasero|traseros|anterior|posterior|frontal|del|pos|izquierdo|derecho|izq|der|superior|inferior|sup|inf))?$/i,
+      extract: (match) => ({
+        product: match[1].trim(),
+        connector: match[2].trim(), // Para debugging
+        brand: match[3].trim(),
+        model: match[4].trim(),
+        position: match[5]?.trim() || null,
+        isStructured: true,
+        searchType: 'producto_conector_marca_modelo'
+      })
+    },
     
+    // ✅ PATRÓN CON POSICIÓN ANTES DEL CONECTOR
+    {
+      pattern: /^(amortiguador|amortiguadores|pastilla|pastillas|disco|discos|embrague|embragues|rotula|rotulas|rótula|rótulas|brazo|brazos|extremo|extremos|bieleta|bieletas|biela|bielas|axial|axiales|homocinetica|homocinéticas|homocinética|junta|juntas|rodamiento|rodamientos|ruleman|rulemanes|maza|mazas|buje|bujes|semieje|semiejes|eje|ejes|soporte|soportes|parrilla|parrillas|cazoleta|cazoletas|barra|barras|caja|cajas|bomba|bombas|freno|frenos|clutch|campana|campanas|suspension|suspensión|neumática|neumatica)\s+(delantero|delanteros|trasero|traseros|anterior|posterior|frontal|del|pos|izquierdo|derecho|izq|der|superior|inferior|sup|inf)\s+(del|de|para|de\s+la|del\s+auto|de\s+mi|para\s+el|para\s+mi)\s+([a-z]+)\s+([a-z0-9]+(?:\s+[a-z0-9]+)*)$/i,
+      extract: (match) => ({
+        product: match[1].trim(),
+        position: match[2].trim(),
+        connector: match[3].trim(), // Para debugging
+        brand: match[4].trim(),
+        model: match[5].trim(),
+        isStructured: true,
+        searchType: 'producto_posicion_conector_marca_modelo'
+      })
+    },
+    {
+      pattern: /^(necesito|busco|quiero|preciso)\s+(amortiguador|pastillas?|discos?|bieletas?|rotulas?|brazo|extremo)\s+([a-z]+)\s+([a-z0-9]+)$/i,
+      extract: (match) => ({
+        intent: match[1].trim(), // "necesito", "busco", etc.
+        product: match[2].trim(),
+        brand: match[3].trim(),
+        model: match[4].trim(),
+        isStructured: true,
+        searchType: 'busqueda_informal'
+      })
+    },
     // "amortiguador trasero corolla 2009" - PRODUCTO POSICIÓN MODELO AÑO
     {
       pattern: /^(amortiguador|amortiguadores|pastilla|pastillas|disco|discos|embrague|embragues|rotula|rotulas|brazo|brazos|extremo|extremos|bieleta|bieletas|axial|axiales|homocinetica|homocinéticas|rodamiento|rodamientos|maza|mazas|semieje|semiejes|soporte|soportes|parrilla|parrillas|cazoleta|cazoletas|barra|barras|caja|cajas|bomba|bombas)\s+(delantero|delanteros|trasero|traseros|anterior|posterior|del|pos|izq|der|izquierdo|derecho|superior|inferior)\s+([a-z0-9]+)\s+(\d{4})$/i,
