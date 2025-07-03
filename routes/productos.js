@@ -428,6 +428,8 @@ router.get('/filtros/:tipo', async (req, res) => {
 module.exports = router;
 
 
+// 🚨 REEMPLAZAR URGENTE en productos.js - Ruta /busqueda con DEBUG COMPLETO
+
 router.get('/busqueda', async (req, res) => {
   try {
     const { 
@@ -443,40 +445,14 @@ router.get('/busqueda', async (req, res) => {
       });
     }
 
+    console.log('🔍 [BÚSQUEDA BACKEND] ===== INICIO DEBUG =====');
     console.log('🔍 [BÚSQUEDA BACKEND] Query recibida:', q);
 
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
-    // ✅ PARSEAR QUERY CON PATRONES INTELIGENTES
-    console.log('🧠 [BACKEND] Iniciando parseNaturalQuery...');
-    const parsedQuery = parseNaturalQuery(q.trim());
-    console.log('🧠 [BACKEND] Query parseada:', JSON.stringify(parsedQuery, null, 2));
-
-    // ✅ VERIFICAR SI ES BÚSQUEDA ESTRUCTURADA
-    if (parsedQuery.isStructured) {
-      console.log('🎯 [BACKEND] Búsqueda ESTRUCTURADA detectada');
-      console.log('📋 [BACKEND] Detalles:', {
-        product: parsedQuery.product,
-        position: parsedQuery.position,
-        model: parsedQuery.model,
-        brand: parsedQuery.brand,
-        year: parsedQuery.year,
-        searchType: parsedQuery.searchType
-      });
-    } else {
-      console.log('🔍 [BACKEND] Búsqueda LIBRE detectada');
-      console.log('📋 [BACKEND] Texto libre:', parsedQuery.freeText);
-    }
-
-    // ✅ CONSTRUIR PIPELINE DE AGREGACIÓN
-    console.log('🔧 [BACKEND] Construyendo pipeline...');
-    const pipeline = buildSearchPipeline(parsedQuery, parseInt(limit), parseInt(offset));
-    console.log('📋 [BACKEND] Pipeline construido con', pipeline.length, 'etapas');
-    console.log('📋 [BACKEND] Pipeline completo:', JSON.stringify(pipeline, null, 2));
-
-    // ✅ VERIFICAR CONEXIÓN Y COLECCIÓN
+    // ✅ VERIFICAR CONEXIÓN Y COLECCIÓN PRIMERO
     console.log('🔗 [BACKEND] Verificando conexión MongoDB...');
     const collectionExists = await db.listCollections({ name: COLLECTION_NAME }).hasNext();
     console.log('🔗 [BACKEND] Colección existe:', collectionExists);
@@ -501,101 +477,202 @@ router.get('/busqueda', async (req, res) => {
       });
     }
 
-    // ✅ EJECUTAR BÚSQUEDA
-    console.log('🚀 [BACKEND] Ejecutando agregación...');
-    const startTime = Date.now();
-    const results = await collection.aggregate(pipeline).toArray();
-    const processingTime = Date.now() - startTime;
+    // ✅ PARSEAR QUERY CON DEBUG
+    console.log('🧠 [BACKEND] Iniciando parseNaturalQuery...');
+    const parsedQuery = parseNaturalQuery(q.trim());
+    console.log('🧠 [BACKEND] Query parseada:', JSON.stringify(parsedQuery, null, 2));
 
-    console.log(`📊 [BACKEND] Agregación completada: ${results.length} resultados en ${processingTime}ms`);
-    
-    // ✅ DEBUG DETALLADO DE RESULTADOS
-    if (results.length > 0) {
-      console.log('📦 [BACKEND] Primeros 3 resultados encontrados:');
-      results.slice(0, 3).forEach((result, index) => {
-        console.log(`  ${index + 1}. Código: ${result.codigo}`);
-        console.log(`     Nombre: ${result.nombre}`);
-        console.log(`     Categoría: ${result.categoria}`);
-        console.log(`     Aplicaciones: ${result.aplicaciones?.length || 0}`);
-        if (result.aplicaciones && result.aplicaciones.length > 0) {
-          const app = result.aplicaciones[0];
-          console.log(`     Primera aplicación: ${app.marca} ${app.modelo} ${app.version || 'N/A'}`);
-        }
-        console.log(`     Posición: ${result.detalles_tecnicos?.["Posición de la pieza"] || 'N/A'}`);
-        console.log('     ---');
+    // ✅ VERIFICAR SI ES BÚSQUEDA ESTRUCTURADA
+    if (parsedQuery.isStructured) {
+      console.log('🎯 [BACKEND] Búsqueda ESTRUCTURADA detectada');
+      console.log('📋 [BACKEND] Detalles:', {
+        product: parsedQuery.product,
+        position: parsedQuery.position,
+        model: parsedQuery.model,
+        brand: parsedQuery.brand,
+        year: parsedQuery.year,
+        searchType: parsedQuery.searchType
       });
     } else {
-      console.log('❌ [BACKEND] No se encontraron resultados');
-      
-      // ✅ DEBUG ADICIONAL: Probar consultas más simples
-      console.log('🔍 [DEBUG] Probando consultas más simples...');
-      
-      // Test 1: Buscar por categoría solamente
-      if (parsedQuery.product) {
-        const validCategories = getValidCategoriesForProduct(parsedQuery.product);
-        console.log('🧪 [DEBUG] Categorías válidas:', validCategories);
-        
-        const categoryResults = await collection.find({
-          categoria: { $in: validCategories }
-        }).limit(3).toArray();
-        
-        console.log(`🧪 [DEBUG] Productos con esas categorías: ${categoryResults.length}`);
-        if (categoryResults.length > 0) {
-          console.log('🧪 [DEBUG] Ejemplo:', categoryResults[0].codigo, '-', categoryResults[0].categoria);
-        }
-      }
-      
-      // Test 2: Buscar por modelo solamente
-      if (parsedQuery.model) {
-        const modelResults = await collection.find({
-          'aplicaciones.modelo': { $regex: parsedQuery.model, $options: 'i' }
-        }).limit(3).toArray();
-        
-        console.log(`🧪 [DEBUG] Productos para modelo ${parsedQuery.model}: ${modelResults.length}`);
-        if (modelResults.length > 0) {
-          console.log('🧪 [DEBUG] Ejemplo:', modelResults[0].codigo, '-', modelResults[0].aplicaciones?.[0]?.modelo);
-        }
-      }
-      
-      // Test 3: Buscar por año solamente
-      if (parsedQuery.year) {
-        const year2digit = parsedQuery.year.slice(-2);
-        const yearResults = await collection.find({
-          'aplicaciones.version': { $regex: `\\(${year2digit}/`, $options: 'i' }
-        }).limit(3).toArray();
-        
-        console.log(`🧪 [DEBUG] Productos para año ${parsedQuery.year}: ${yearResults.length}`);
-        if (yearResults.length > 0) {
-          console.log('🧪 [DEBUG] Ejemplo:', yearResults[0].codigo, '-', yearResults[0].aplicaciones?.[0]?.version);
-        }
-      }
+      console.log('🔍 [BACKEND] Búsqueda LIBRE detectada');
+      console.log('📋 [BACKEND] Texto libre:', parsedQuery.freeText);
     }
 
-    // ✅ RESPUESTA MEJORADA
-    const response = {
-      success: true,
-      query: q,
-      parsedQuery: parsedQuery,
-      results: results,
-      totalResults: results.length,
-      processingTime: processingTime,
-      debug: {
-        collectionName: COLLECTION_NAME,
-        totalDocuments: totalDocs,
-        pipelineStages: pipeline.length,
-        isStructuredSearch: !!parsedQuery.isStructured
-      },
-      timestamp: new Date().toISOString()
-    };
+    // ✅ PROBAR BÚSQUEDA SIMPLE PRIMERO (ANTES DEL PIPELINE COMPLEJO)
+    console.log('🧪 [TEST SIMPLE] ===== PROBANDO BÚSQUEDA BÁSICA =====');
+    
+    // Test 1: Buscar por categoría solamente
+    console.log('🧪 [TEST 1] Buscando solo por categorías de amortiguador...');
+    const categoryResults = await collection.find({
+      categoria: { $in: ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'] }
+    }).limit(5).toArray();
+    
+    console.log(`🧪 [TEST 1] Productos con esas categorías: ${categoryResults.length}`);
+    if (categoryResults.length > 0) {
+      console.log('🧪 [TEST 1] Ejemplo:', categoryResults[0].codigo, '-', categoryResults[0].categoria);
+      categoryResults.forEach((product, index) => {
+        console.log(`  ${index + 1}. ${product.codigo} - ${product.categoria} - Aplicaciones: ${product.aplicaciones?.length || 0}`);
+      });
+    } else {
+      console.log('❌ [TEST 1] No hay amortiguadores en la base de datos');
+    }
+    
+    // Test 2: Buscar por modelo PEUGEOT
+    console.log('🧪 [TEST 2] Buscando por marca PEUGEOT...');
+    const peugeotResults = await collection.find({
+      'aplicaciones.marca': { $regex: 'PEUGEOT', $options: 'i' }
+    }).limit(5).toArray();
+    
+    console.log(`🧪 [TEST 2] Productos para PEUGEOT: ${peugeotResults.length}`);
+    if (peugeotResults.length > 0) {
+      console.log('🧪 [TEST 2] Ejemplos:');
+      peugeotResults.forEach((product, index) => {
+        const peugeotApp = product.aplicaciones?.find(app => 
+          app.marca?.toLowerCase().includes('peugeot')
+        );
+        console.log(`  ${index + 1}. ${product.codigo} - ${product.categoria}`);
+        if (peugeotApp) {
+          console.log(`     Aplicación PEUGEOT: ${peugeotApp.marca} ${peugeotApp.modelo} ${peugeotApp.version}`);
+        }
+      });
+    } else {
+      console.log('❌ [TEST 2] No hay productos para PEUGEOT');
+    }
+    
+    // Test 3: Buscar por modelo 504
+    console.log('🧪 [TEST 3] Buscando por modelo 504...');
+    const model504Results = await collection.find({
+      'aplicaciones.modelo': { $regex: '504', $options: 'i' }
+    }).limit(5).toArray();
+    
+    console.log(`🧪 [TEST 3] Productos para modelo 504: ${model504Results.length}`);
+    if (model504Results.length > 0) {
+      console.log('🧪 [TEST 3] Ejemplos:');
+      model504Results.forEach((product, index) => {
+        const app504 = product.aplicaciones?.find(app => 
+          app.modelo?.toLowerCase().includes('504')
+        );
+        console.log(`  ${index + 1}. ${product.codigo} - ${product.categoria}`);
+        if (app504) {
+          console.log(`     Aplicación 504: ${app504.marca} ${app504.modelo} ${app504.version}`);
+        }
+      });
+    } else {
+      console.log('❌ [TEST 3] No hay productos para modelo 504');
+    }
+    
+    // Test 4: Buscar COMBINADO (Amortiguador + PEUGEOT + 504)
+    console.log('🧪 [TEST 4] Buscando COMBINADO: Amortiguador + PEUGEOT + 504...');
+    const combinedResults = await collection.find({
+      categoria: { $in: ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'] },
+      'aplicaciones.marca': { $regex: 'PEUGEOT', $options: 'i' },
+      'aplicaciones.modelo': { $regex: '504', $options: 'i' }
+    }).toArray();
+    
+    console.log(`🧪 [TEST 4] Productos COMBINADOS: ${combinedResults.length}`);
+    if (combinedResults.length > 0) {
+      console.log('🧪 [TEST 4] ¡ENCONTRADOS! Ejemplos:');
+      combinedResults.forEach((product, index) => {
+        console.log(`  ${index + 1}. ${product.codigo} - ${product.categoria}`);
+        const matchingApp = product.aplicaciones?.find(app => 
+          app.marca?.toLowerCase().includes('peugeot') && 
+          app.modelo?.toLowerCase().includes('504')
+        );
+        if (matchingApp) {
+          console.log(`     ✅ Aplicación: ${matchingApp.marca} ${matchingApp.modelo} ${matchingApp.version}`);
+        }
+      });
+    } else {
+      console.log('❌ [TEST 4] No hay amortiguadores PEUGEOT 504 en la base de datos');
+    }
 
-    // ✅ LOG FINAL
-    console.log('✅ [BACKEND] Respuesta enviada:', {
-      success: true,
-      totalResults: results.length,
-      processingTime: processingTime
-    });
+    // ✅ SI LOS TESTS BÁSICOS FUNCIONAN, PROBAR EL PIPELINE
+    if (combinedResults.length > 0) {
+      console.log('✅ [BACKEND] Los datos existen, probando pipeline...');
+      
+      // ✅ CONSTRUIR PIPELINE CON DEBUG
+      console.log('🔧 [BACKEND] Construyendo pipeline...');
+      const pipeline = buildSearchPipelineWithDebug(parsedQuery, parseInt(limit), parseInt(offset));
+      console.log('📋 [BACKEND] Pipeline construido con', pipeline.length, 'etapas');
+      
+      // ✅ EJECUTAR BÚSQUEDA
+      console.log('🚀 [BACKEND] Ejecutando agregación...');
+      const startTime = Date.now();
+      const results = await collection.aggregate(pipeline).toArray();
+      const processingTime = Date.now() - startTime;
 
-    res.json(response);
+      console.log(`📊 [BACKEND] Agregación completada: ${results.length} resultados en ${processingTime}ms`);
+      
+      // ✅ DEBUG DETALLADO DE RESULTADOS
+      if (results.length > 0) {
+        console.log('📦 [BACKEND] Primeros 3 resultados encontrados:');
+        results.slice(0, 3).forEach((result, index) => {
+          console.log(`  ${index + 1}. Código: ${result.codigo}`);
+          console.log(`     Nombre: ${result.nombre}`);
+          console.log(`     Categoría: ${result.categoria}`);
+          console.log(`     Aplicaciones: ${result.aplicaciones?.length || 0}`);
+          if (result.aplicaciones && result.aplicaciones.length > 0) {
+            const app = result.aplicaciones[0];
+            console.log(`     Primera aplicación: ${app.marca} ${app.modelo} ${app.version || 'N/A'}`);
+          }
+          console.log(`     ---`);
+        });
+      } else {
+        console.log('❌ [BACKEND] Pipeline no devolvió resultados');
+      }
+
+      // ✅ RESPUESTA FINAL
+      const response = {
+        success: true,
+        query: q,
+        parsedQuery: parsedQuery,
+        results: results.length > 0 ? results : combinedResults, // FALLBACK a búsqueda simple
+        totalResults: results.length > 0 ? results.length : combinedResults.length,
+        processingTime: processingTime,
+        debug: {
+          collectionName: COLLECTION_NAME,
+          totalDocuments: totalDocs,
+          pipelineStages: pipeline.length,
+          isStructuredSearch: !!parsedQuery.isStructured,
+          testResults: {
+            categories: categoryResults.length,
+            peugeot: peugeotResults.length,
+            model504: model504Results.length,
+            combined: combinedResults.length
+          }
+        },
+        timestamp: new Date().toISOString()
+      };
+
+      console.log('✅ [BACKEND] Respuesta enviada:', {
+        success: true,
+        totalResults: response.totalResults,
+        processingTime: processingTime
+      });
+
+      res.json(response);
+      
+    } else {
+      // ✅ RESPUESTA CUANDO NO HAY DATOS
+      console.log('❌ [BACKEND] No hay datos que coincidan con la búsqueda');
+      
+      const response = {
+        success: true,
+        query: q,
+        parsedQuery: parsedQuery,
+        results: [],
+        totalResults: 0,
+        processingTime: 0,
+        debug: {
+          collectionName: COLLECTION_NAME,
+          totalDocuments: totalDocs,
+          message: 'No se encontraron datos que coincidan con la búsqueda'
+        },
+        timestamp: new Date().toISOString()
+      };
+      
+      res.json(response);
+    }
 
   } catch (error) {
     console.error('❌ [BÚSQUEDA BACKEND] Error completo:', error);
@@ -611,6 +688,67 @@ router.get('/busqueda', async (req, res) => {
     });
   }
 });
+
+// ✅ FUNCIÓN AUXILIAR PARA DEBUG DEL PIPELINE
+function buildSearchPipelineWithDebug(parsedQuery, limit, offset) {
+  console.log('🔧 [PIPELINE DEBUG] ===== INICIO CONSTRUCCIÓN =====');
+  console.log('🔧 [PIPELINE DEBUG] Query recibida:', JSON.stringify(parsedQuery, null, 2));
+  
+  const pipeline = [];
+  
+  if (parsedQuery.freeText) {
+    console.log('📝 [PIPELINE DEBUG] Tipo: BÚSQUEDA LIBRE');
+    const searchText = parsedQuery.freeText.trim();
+    console.log('📝 [PIPELINE DEBUG] Texto de búsqueda:', searchText);
+    
+    // ✅ BÚSQUEDA MÁS PERMISIVA PARA TEXTO LIBRE
+    const searchConditions = [
+      { codigo: { $regex: searchText, $options: 'i' } },
+      { nombre: { $regex: searchText, $options: 'i' } },
+      { categoria: { $regex: searchText, $options: 'i' } },
+      { "aplicaciones.marca": { $regex: searchText, $options: 'i' } },
+      { "aplicaciones.modelo": { $regex: searchText, $options: 'i' } },
+      { "aplicaciones.version": { $regex: searchText, $options: 'i' } }
+    ];
+    
+    // ✅ TAMBIÉN BUSCAR POR TÉRMINOS INDIVIDUALES
+    const terms = searchText.split(/\s+/).filter(t => t.length > 1);
+    console.log('📝 [PIPELINE DEBUG] Términos individuales:', terms);
+    
+    terms.forEach(term => {
+      searchConditions.push({ codigo: { $regex: term, $options: 'i' } });
+      searchConditions.push({ nombre: { $regex: term, $options: 'i' } });
+      searchConditions.push({ categoria: { $regex: term, $options: 'i' } });
+      searchConditions.push({ "aplicaciones.marca": { $regex: term, $options: 'i' } });
+      searchConditions.push({ "aplicaciones.modelo": { $regex: term, $options: 'i' } });
+      searchConditions.push({ "aplicaciones.version": { $regex: term, $options: 'i' } });
+    });
+    
+    console.log('📝 [PIPELINE DEBUG] Total condiciones de búsqueda:', searchConditions.length);
+    pipeline.push({ $match: { $or: searchConditions } });
+    
+  } else if (parsedQuery.isStructured) {
+    console.log('🎯 [PIPELINE DEBUG] Tipo: BÚSQUEDA ESTRUCTURADA');
+    
+    // ✅ USAR LA FUNCIÓN ORIGINAL PERO CON MÁS DEBUG
+    const structuredPipeline = buildSearchPipeline(parsedQuery, limit, offset);
+    return structuredPipeline;
+    
+  } else {
+    console.log('🔄 [PIPELINE DEBUG] Tipo: FALLBACK');
+    pipeline.push({ $match: { tiene_precio_valido: true } });
+  }
+  
+  // ✅ RESTO DEL PIPELINE BÁSICO
+  pipeline.push({ $sort: { codigo: 1 } });
+  if (offset > 0) pipeline.push({ $skip: offset });
+  pipeline.push({ $limit: limit });
+  pipeline.push({ $project: { _id: 0 } });
+  
+  console.log('🏗️ [PIPELINE DEBUG] Pipeline final:', JSON.stringify(pipeline, null, 2));
+  
+  return pipeline;
+}
 
 // 💡 SUGERENCIAS - Para auto-completado
 router.get('/sugerencias', async (req, res) => {
