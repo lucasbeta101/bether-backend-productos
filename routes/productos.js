@@ -664,7 +664,82 @@ function normalizeText(text) {
     .toLowerCase()
     .trim();
 }
+// 🎯 FORMATEAR QUERY PARA BÚSQUEDA INTELIGENTE
+function formatearParaBusqueda(query) {
+  const formatted = {
+    categoria: null,
+    posicion: null,
+    marca: null,
+    modelo: null,
+    version: null
+  };
 
+  // ✅ MAPEAR CATEGORÍAS
+  const categoriasMap = {
+    'amortiguador': 'Amort CORVEN',
+    'amortiguadores': 'Amort CORVEN', 
+    'pastilla': 'Pastillas CORVEN HT',
+    'pastillas': 'Pastillas CORVEN HT',
+    'disco': 'Discos y Camp CORVEN',
+    'discos': 'Discos y Camp CORVEN',
+    'rotula': 'Rotulas CORVEN',
+    'rotulas': 'Rotulas CORVEN',
+    'brazo': 'Brazos Susp CORVEN',
+    'brazos': 'Brazos Susp CORVEN',
+    'extremo': 'Extremos CORVEN',
+    'extremos': 'Extremos CORVEN',
+    'bieleta': 'Bieletas CORVEN',
+    'bieletas': 'Bieletas CORVEN'
+  };
+
+  // ✅ MAPEAR POSICIONES
+  const posicionesMap = {
+    'delantero': 'Delantero',
+    'delanteros': 'Delantero',
+    'del': 'Delantero',
+    'trasero': 'Trasero', 
+    'traseros': 'Trasero',
+    'pos': 'Trasero'
+  };
+
+  // ✅ MAPEAR MARCAS
+  const marcasMap = {
+    'ford': 'FORD',
+    'vw': 'VOLKSWAGEN',
+    'volkswagen': 'VOLKSWAGEN',
+    'chevrolet': 'CHEVROLET',
+    'chevy': 'CHEVROLET',
+    'peugeot': 'PEUGEOT',
+    'renault': 'RENAULT'
+  };
+
+  // ✅ NORMALIZAR MODELOS
+  const modelosMap = {
+    'ka': 'KA',
+    'escort': 'ESCORT',
+    'focus': 'FOCUS',
+    'gol': 'GOL',
+    '206': '206',
+    '207': '207'
+  };
+
+  // ✅ PROCESAR QUERY
+  const terms = normalizeText(query).split(/\s+/);
+  
+  terms.forEach(term => {
+    if (categoriasMap[term]) formatted.categoria = categoriasMap[term];
+    if (posicionesMap[term]) formatted.posicion = posicionesMap[term];
+    if (marcasMap[term]) formatted.marca = marcasMap[term];
+    if (modelosMap[term]) formatted.modelo = modelosMap[term];
+    
+    // Versiones/años
+    if (/^\d{2,4}$/.test(term)) {
+      formatted.version = term.length === 2 ? `(${term}/` : `(${term.slice(-2)}/`;
+    }
+  });
+
+  return formatted;
+}
 // 🧠 PARSEAR CONSULTA NATURAL
 function parseNaturalQuery(query) {
   const normalized = normalizeText(query);
@@ -723,88 +798,138 @@ function parseNaturalQuery(query) {
 // 🏗 CONSTRUIR PIPELINE DE BÚSQUEDA
 function buildSearchPipeline(parsedQuery, limit, offset) {
   const pipeline = [];
-  let matchStage = {};
-
+  
   if (parsedQuery.freeText) {
-    // ✅ BÚSQUEDA LIBRE CON TEXTO
-    const searchTerms = parsedQuery.freeText.split(/\s+/).filter(t => t.length > 1);
-    const orConditions = [];
-
-    searchTerms.forEach(term => {
-      orConditions.push(
-        { codigo: { $regex: term, $options: 'i' } },
-        { nombre: { $regex: term, $options: 'i' } },
-        { categoria: { $regex: term, $options: 'i' } },
-        { marca: { $regex: term, $options: 'i' } },
-        { "aplicaciones.marca": { $regex: term, $options: 'i' } },
-        { "aplicaciones.modelo": { $regex: term, $options: 'i' } },
-        { "aplicaciones.version": { $regex: term, $options: 'i' } }
-      );
-    });
-
-    matchStage.$or = orConditions;
-
-  } else {
-    // ✅ BÚSQUEDA ESTRUCTURADA
-    if (parsedQuery.product) {
-      matchStage.$or = [
-        { categoria: { $regex: parsedQuery.product, $options: 'i' } },
-        { nombre: { $regex: parsedQuery.product, $options: 'i' } }
-      ];
-    }
-
-    if (parsedQuery.brand || parsedQuery.model || parsedQuery.version) {
-      const aplicacionesMatch = {};
-      if (parsedQuery.brand) aplicacionesMatch["aplicaciones.marca"] = { $regex: parsedQuery.brand, $options: 'i' };
-      if (parsedQuery.model) aplicacionesMatch["aplicaciones.modelo"] = { $regex: parsedQuery.model, $options: 'i' };
-      if (parsedQuery.version) aplicacionesMatch["aplicaciones.version"] = { $regex: parsedQuery.version, $options: 'i' };
+    // ✅ FORMATEAR QUERY INTELIGENTEMENTE
+    const formatted = formatearParaBusqueda(parsedQuery.freeText);
+    const searchText = parsedQuery.freeText.trim();
+    
+    console.log('🎯 [FORMATO] Query formateada:', formatted);
+    
+    // ✅ CONSTRUIR CONDICIONES DE BÚSQUEDA
+    const searchConditions = [];
+    
+    // 1. BÚSQUEDA EXACTA CON ÍNDICE COMPUESTO (máxima prioridad)
+    if (formatted.categoria || formatted.posicion || formatted.marca || formatted.modelo) {
+      const compoundMatch = {};
+      if (formatted.categoria) compoundMatch.categoria = formatted.categoria;
+      if (formatted.posicion) compoundMatch["detalles_tecnicos.Posición de la pieza"] = formatted.posicion;
+      if (formatted.marca) compoundMatch["aplicaciones.marca"] = formatted.marca;
+      if (formatted.modelo) compoundMatch["aplicaciones.modelo"] = formatted.modelo;
+      if (formatted.version) {
+        compoundMatch["aplicaciones.version"] = { $regex: formatted.version, $options: 'i' };
+      }
       
-      Object.assign(matchStage, aplicacionesMatch);
+      searchConditions.push(compoundMatch);
     }
-
-    if (parsedQuery.position) {
-      matchStage["detalles_tecnicos.Posición de la pieza"] = { $regex: parsedQuery.position, $options: 'i' };
+    
+    // 2. CÓDIGO EXACTO
+    searchConditions.push(
+      { codigo: searchText },
+      { codigo: { $regex: `^${searchText}`, $options: 'i' } }
+    );
+    
+    // 3. EQUIVALENCIAS
+    searchConditions.push(
+      { "equivalencias.codigo": searchText },
+      { "equivalencias.codigo": { $regex: searchText, $options: 'i' } }
+    );
+    
+    // 4. BÚSQUEDA DE TEXTO COMPLETO
+    if (searchText.length > 2) {
+      searchConditions.push({ $text: { $search: searchText } });
     }
+    
+    // 5. BÚSQUEDAS REGEX GENERALES
+    searchConditions.push(
+      { nombre: { $regex: searchText, $options: 'i' } },
+      { categoria: { $regex: searchText, $options: 'i' } },
+      { "aplicaciones.marca": { $regex: searchText, $options: 'i' } },
+      { "aplicaciones.modelo": { $regex: searchText, $options: 'i' } }
+    );
+    
+    pipeline.push({ $match: { $or: searchConditions } });
+    
+  } else {
+    // ✅ BÚSQUEDA ESTRUCTURADA (mantener lógica original)
+    const conditions = [];
+    
+    if (parsedQuery.product) {
+      conditions.push({
+        $or: [
+          { categoria: { $regex: parsedQuery.product, $options: 'i' } },
+          { nombre: { $regex: parsedQuery.product, $options: 'i' } }
+        ]
+      });
+    }
+    
+    if (parsedQuery.brand && parsedQuery.model) {
+      conditions.push({
+        $and: [
+          { "aplicaciones.marca": { $regex: parsedQuery.brand, $options: 'i' } },
+          { "aplicaciones.modelo": { $regex: parsedQuery.model, $options: 'i' } }
+        ]
+      });
+    }
+    
+    pipeline.push({
+      $match: conditions.length > 0 ? { $and: conditions } : {}
+    });
   }
-
-  // ✅ PIPELINE STAGES
-  pipeline.push({ $match: matchStage });
-
-  // ✅ SCORING (simulado con $addFields)
+  
+  // ✅ SCORING INTELIGENTE
   pipeline.push({
     $addFields: {
-      score: {
+      relevanceScore: {
         $add: [
-          // Score por código exacto
+          // Código exacto = 1000 puntos
+          { $cond: [{ $eq: ["$codigo", parsedQuery.freeText || ""] }, 1000, 0] },
+          
+          // Equivalencia exacta = 900 puntos
+          { $cond: [{ $in: [parsedQuery.freeText || "", "$equivalencias.codigo"] }, 900, 0] },
+          
+          // Texto completo = textScore * 100
           { $cond: [
-            { $regexMatch: { input: "$codigo", regex: parsedQuery.freeText || parsedQuery.product || "", options: "i" } },
-            100, 0
+            { $gt: [{ $ifNull: [{ $meta: "textScore" }, 0] }, 0] },
+            { $multiply: [{ $meta: "textScore" }, 100] },
+            0
           ]},
-          // Score por nombre
+          
+          // Índice compuesto usado = 800 puntos
           { $cond: [
-            { $regexMatch: { input: "$nombre", regex: parsedQuery.freeText || parsedQuery.product || "", options: "i" } },
-            80, 0
+            { $and: [
+              { $ne: ["$categoria", null] },
+              { $ne: ["$detalles_tecnicos.Posición de la pieza", null] }
+            ]},
+            800, 0
           ]},
-          // Score por categoría
+          
+          // Nombre contiene = 300 puntos
           { $cond: [
-            { $regexMatch: { input: "$categoria", regex: parsedQuery.freeText || parsedQuery.product || "", options: "i" } },
-            70, 0
+            { $regexMatch: { input: "$nombre", regex: parsedQuery.freeText || "", options: "i" } },
+            300, 0
+          ]},
+          
+          // Categoría = 200 puntos
+          { $cond: [
+            { $regexMatch: { input: "$categoria", regex: parsedQuery.freeText || "", options: "i" } },
+            200, 0
           ]}
         ]
       }
     }
   });
-
+  
   // ✅ ORDENAR POR RELEVANCIA
-  pipeline.push({ $sort: { score: -1, codigo: 1 } });
-
+  pipeline.push({ $sort: { relevanceScore: -1, codigo: 1 } });
+  
   // ✅ PAGINACIÓN
   if (offset > 0) pipeline.push({ $skip: offset });
   pipeline.push({ $limit: limit });
-
-  // ✅ REMOVER SCORE DEL RESULTADO FINAL
-  pipeline.push({ $project: { score: 0, _id: 0 } });
-
+  
+  // ✅ LIMPIAR RESULTADO
+  pipeline.push({ $project: { relevanceScore: 0, _id: 0 } });
+  
   return pipeline;
 }
 
