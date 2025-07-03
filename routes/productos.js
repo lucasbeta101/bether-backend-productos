@@ -750,14 +750,76 @@ function formatearParaBusqueda(query) {
   return formatted;
 }
 
-javascript// 🧠 PARSEAR CONSULTA NATURAL - VERSIÓN COMPLETA
 function parseNaturalQuery(query) {
   const normalized = normalizeText(query);
-  console.log('🔍 [BACKEND] Parseando query:', normalized);
+  console.log('🔍 [BACKEND MEJORADO] Parseando query:', normalized);
 
-  // ✅ PATRONES COMPLEJOS COMPLETOS
-  const complexPatterns = [
-    // "bieleta fiat 500 2009 izquierda y derecha" - NUEVO PATRÓN
+  // ✅ NUEVOS PATRONES ESPECÍFICOS PARA TUS CASOS
+  const enhancedPatterns = [
+    
+    // "amortiguador trasero corolla 2009" - PRODUCTO POSICIÓN MODELO AÑO
+    {
+      pattern: /^(amortiguador|amortiguadores|pastilla|pastillas|disco|discos|embrague|embragues|rotula|rotulas|brazo|brazos|extremo|extremos|bieleta|bieletas|axial|axiales|homocinetica|homocinéticas|rodamiento|rodamientos|maza|mazas|semieje|semiejes|soporte|soportes|parrilla|parrillas|cazoleta|cazoletas|barra|barras|caja|cajas|bomba|bombas)\s+(delantero|delanteros|trasero|traseros|anterior|posterior|del|pos|izq|der|izquierdo|derecho|superior|inferior)\s+([a-z0-9]+)\s+(\d{4})$/i,
+      extract: (match) => ({
+        product: match[1].trim(),
+        position: match[2].trim(),
+        model: match[3].trim(),
+        year: match[4].trim(),
+        isStructured: true,
+        searchType: 'producto_posicion_modelo_año'
+      })
+    },
+
+    // "pastillas de freno hilux 2016" - PRODUCTO COMPLEJO MODELO AÑO
+    {
+      pattern: /^(pastillas?\s+de\s+freno|discos?\s+de\s+freno|amortiguadores?|rotulas?|bieletas?|extremos?|brazos?\s+de\s+suspension)\s+([a-z0-9]+)\s+(\d{4})$/i,
+      extract: (match) => ({
+        product: normalizeComplexProduct(match[1].trim()),
+        model: match[2].trim(),
+        year: match[3].trim(),
+        isStructured: true,
+        searchType: 'producto_complejo_modelo_año'
+      })
+    },
+
+    // "disco de freno delantera peugeot 308 2018" - PRODUCTO COMPLEJO POSICIÓN MARCA MODELO AÑO
+    {
+      pattern: /^(pastillas?\s+de\s+freno|discos?\s+de\s+freno|amortiguadores?|rotulas?|bieletas?|extremos?)\s+(delantero|delanteros|trasero|traseros|delantera|delanteras|trasera|traseras|del|pos)\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{4})$/i,
+      extract: (match) => ({
+        product: normalizeComplexProduct(match[1].trim()),
+        position: match[2].trim(),
+        brand: match[3].trim(),
+        model: match[4].trim(),
+        year: match[5].trim(),
+        isStructured: true,
+        searchType: 'producto_complejo_posicion_marca_modelo_año'
+      })
+    },
+
+    // "pastillas hilux" - PRODUCTO MODELO (sin año)
+    {
+      pattern: /^(amortiguador|amortiguadores|pastilla|pastillas|disco|discos|embrague|embragues|rotula|rotulas|brazo|brazos|extremo|extremos|bieleta|bieletas)\s+([a-z0-9]+)$/i,
+      extract: (match) => ({
+        product: match[1].trim(),
+        model: match[2].trim(),
+        isStructured: true,
+        searchType: 'producto_modelo_simple'
+      })
+    },
+
+    // "corolla 2009" - SOLO MODELO Y AÑO
+    {
+      pattern: /^([a-z0-9]+)\s+(\d{4})$/i,
+      extract: (match) => ({
+        model: match[1].trim(),
+        year: match[2].trim(),
+        isStructured: true,
+        searchType: 'solo_modelo_año'
+      })
+    },
+
+    
+    // "bieleta fiat 500 2009 izquierda y derecha"
     {
       pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})\s+(izquierda\s+y\s+derecha|izq\s+y\s+der|bilateral|ambos\s+lados|par)$/i,
       extract: (match) => ({
@@ -766,11 +828,12 @@ function parseNaturalQuery(query) {
         model: match[3].trim(),
         year: match[4].trim(),
         position: 'ambos_lados',
-        isStructured: true
+        isStructured: true,
+        searchType: 'ultra_specific_bilateral'
       })
     },
 
-    // "bieleta izquierda fiat 500 2009" - POSICIÓN AL PRINCIPIO
+    // "bieleta izquierda fiat 500 2009"
     {
       pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+(delantero|trasero|izquierdo|derecho|izquierda|del|pos|izq|der)\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})$/i,
       extract: (match) => ({
@@ -779,11 +842,12 @@ function parseNaturalQuery(query) {
         brand: match[3].trim(),
         model: match[4].trim(),
         year: match[5].trim(),
-        isStructured: true
+        isStructured: true,
+        searchType: 'ultra_specific_position_first'
       })
     },
 
-    // "bieleta fiat 500 2009" - SIN POSICIÓN NI VERSIÓN
+    // "bieleta fiat 500 2009"
     {
       pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})$/i,
       extract: (match) => ({
@@ -791,23 +855,12 @@ function parseNaturalQuery(query) {
         brand: match[2].trim(),
         model: match[3].trim(),
         year: match[4].trim(),
-        isStructured: true
+        isStructured: true,
+        searchType: 'ultra_specific_simple'
       })
     },
 
-    // "bieleta fiat 500" - SIN AÑO
-    {
-      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+([a-z]+)\s+([a-z0-9]+)$/i,
-      extract: (match) => ({
-        product: match[1].trim(),
-        brand: match[2].trim(),
-        model: match[3].trim(),
-        isStructured: true
-      })
-    },
-
-    // PATRONES EXISTENTES (mantener orden)
-    // "amortiguador delantero para peugeot 205 1984 XS"
+    // PATRONES EXISTENTES con "para"
     {
       pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+(delantero|trasero|del|pos|izq|der|superior|inferior)\s+para\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})\s+([a-z0-9]+)$/i,
       extract: (match) => ({
@@ -817,11 +870,11 @@ function parseNaturalQuery(query) {
         model: match[4].trim(),
         year: match[5].trim(),
         version: match[6].trim(),
-        isStructured: true
+        isStructured: true,
+        searchType: 'ultra_specific_perfect'
       })
     },
     
-    // "amortiguador para peugeot 205 1984 XS" (sin posición)
     {
       pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+para\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})\s+([a-z0-9]+)$/i,
       extract: (match) => ({
@@ -830,95 +883,79 @@ function parseNaturalQuery(query) {
         model: match[3].trim(),
         year: match[4].trim(),
         version: match[5].trim(),
-        isStructured: true
-      })
-    },
-
-    // PATRONES ORIGINALES (mantener)
-    {
-      pattern: /^(.+?)\s+(delantero|trasero|anterior|posterior|izquierdo|derecho|del|pos|izq|der|superior|inferior|sup|inf)\s+para\s+(.+?)\s+(.+?)(?:\s+(.+))?$/i,
-      extract: (match) => ({
-        product: match[1].trim(),
-        position: match[2].trim(),
-        brand: match[3].trim(),
-        model: match[4].trim(),
-        version: match[5]?.trim() || null,
-        isStructured: true
-      })
-    },
-    
-    {
-      pattern: /^(.+?)\s+para\s+(.+?)\s+(.+?)(?:\s+(.+))?$/i,
-      extract: (match) => ({
-        product: match[1].trim(),
-        brand: match[2].trim(),
-        model: match[3].trim(),
-        version: match[4]?.trim() || null,
-        isStructured: true
-      })
-    },
-    
-    {
-      pattern: /^(ford|chevrolet|volkswagen|vw|peugeot|renault|fiat|toyota|nissan|honda|hyundai|kia|mazda|mitsubishi|bmw|audi|mercedes|citroen|opel|seat|volvo|subaru|suzuki)\s+([a-z0-9]+)\s+(.+)$/i,
-      extract: (match) => ({
-        brand: match[1].trim(),
-        model: match[2].trim(),
-        product: match[3].trim(),
-        isStructured: true
+        isStructured: true,
+        searchType: 'specific_with_para'
       })
     }
   ];
 
-  // Probar patrones complejos primero
-  for (const pattern of complexPatterns) {
+  // ✅ PROBAR PATRONES MEJORADOS PRIMERO
+  for (const pattern of enhancedPatterns) {
     const match = normalized.match(pattern.pattern);
     if (match) {
       const parsed = pattern.extract(match);
-      console.log('✅ [BACKEND] Patrón estructurado encontrado:', parsed);
+      console.log('✅ [BACKEND] Patrón mejorado encontrado:', parsed);
       return parsed;
     }
   }
 
-  console.log('🔍 [BACKEND] Búsqueda libre para:', normalized);
+  console.log('🔍 [BACKEND] Usando búsqueda libre para:', normalized);
   return { freeText: normalized };
+}
+function normalizeComplexProduct(productName) {
+  const productMap = {
+    'pastillas de freno': 'pastilla',
+    'pastilla de freno': 'pastilla',
+    'discos de freno': 'disco',
+    'disco de freno': 'disco',
+    'brazos de suspension': 'brazo',
+    'brazo de suspension': 'brazo',
+    'amortiguadores': 'amortiguador'
+  };
+  
+  const normalized = productName.toLowerCase().trim();
+  return productMap[normalized] || productName;
 }
 
 
 
+// ===== FUNCIÓN buildSearchPipeline COMPLETA Y MEJORADA =====
 
 function buildSearchPipeline(parsedQuery, limit, offset) {
   const pipeline = [];
   
-  console.log('🔧 [PIPELINE] Construyendo para:', parsedQuery);
+  console.log('🔧 [PIPELINE] Construyendo pipeline MEJORADO para:', parsedQuery);
   
   if (parsedQuery.freeText) {
     // ✅ BÚSQUEDA DE TEXTO LIBRE
     const searchText = parsedQuery.freeText.trim();
     const escapedSearchText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     
-    console.log('🔧 [PIPELINE] Búsqueda de texto libre:', searchText);
+    console.log('🔧 [PIPELINE] Búsqueda libre:', searchText);
     
-    const searchConditions = [];
-    
-    searchConditions.push(
+    const searchConditions = [
       { codigo: { $regex: escapedSearchText, $options: 'i' } },
       { nombre: { $regex: escapedSearchText, $options: 'i' } },
       { categoria: { $regex: escapedSearchText, $options: 'i' } },
+      { marca: { $regex: escapedSearchText, $options: 'i' } },
       { "aplicaciones.marca": { $regex: escapedSearchText, $options: 'i' } },
-      { "aplicaciones.modelo": { $regex: escapedSearchText, $options: 'i' } }
-    );
+      { "aplicaciones.modelo": { $regex: escapedSearchText, $options: 'i' } },
+      { "aplicaciones.version": { $regex: escapedSearchText, $options: 'i' } },
+      { "equivalencias.codigo": { $regex: escapedSearchText, $options: 'i' } },
+      { "equivalencias.marca": { $regex: escapedSearchText, $options: 'i' } }
+    ];
     
     pipeline.push({ $match: { $or: searchConditions } });
     
   } else if (parsedQuery.isStructured) {
     // ✅ BÚSQUEDA ESTRUCTURADA MEJORADA
-    console.log('🔧 [PIPELINE] Búsqueda estructurada detectada');
+    console.log('🔧 [PIPELINE] Búsqueda estructurada MEJORADA');
     
-    const matchConditions = {
-      tiene_precio_valido: true
+    const matchConditions = { 
+      tiene_precio_valido: true 
     };
     
-    // ✅ FILTRAR POR PRODUCTO/CATEGORÍA
+    // ✅ 1. FILTRAR POR PRODUCTO/CATEGORÍA (MEJORADO)
     if (parsedQuery.product) {
       const validCategories = getValidCategoriesForProduct(parsedQuery.product);
       console.log('🔧 [PIPELINE] Categorías válidas para', parsedQuery.product, ':', validCategories);
@@ -926,103 +963,215 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
       if (validCategories.length > 0) {
         matchConditions.categoria = { $in: validCategories };
       } else {
-        console.log('⚠️ [PIPELINE] No se encontraron categorías válidas para:', parsedQuery.product);
+        // ✅ NUEVO: Si no hay categorías específicas, buscar en nombres y categorías
+        console.log('🔧 [PIPELINE] Buscando en nombres y categorías para:', parsedQuery.product);
+        matchConditions.$or = [
+          { nombre: { $regex: parsedQuery.product, $options: 'i' } },
+          { categoria: { $regex: parsedQuery.product, $options: 'i' } }
+        ];
       }
     }
     
-    // ✅ FILTRAR POR VEHÍCULO (MARCA + MODELO)
+    // ✅ 2. FILTRAR POR VEHÍCULO - LÓGICA MEJORADA Y FLEXIBLE
+    let vehicleCondition = null;
+    
+    // Caso 1: Tenemos marca Y modelo
     if (parsedQuery.brand && parsedQuery.model) {
-      console.log('🔧 [PIPELINE] Filtrando por vehículo:', parsedQuery.brand, parsedQuery.model);
+      console.log('🔧 [PIPELINE] Filtrando por MARCA + MODELO:', parsedQuery.brand, parsedQuery.model);
       
-      // Usar $elemMatch para asegurar que marca Y modelo estén en la MISMA aplicación
-      matchConditions.aplicaciones = {
+      vehicleCondition = {
         $elemMatch: {
           marca: { $regex: parsedQuery.brand, $options: 'i' },
           modelo: { $regex: parsedQuery.model, $options: 'i' }
         }
       };
     }
-    
-    // ✅ FILTRAR POR POSICIÓN
-    if (parsedQuery.position) {
-      console.log('🔧 [PIPELINE] Filtrando por posición:', parsedQuery.position);
-      const mappedPosition = mapPositionForSearch(parsedQuery.position);
-      console.log('🔧 [PIPELINE] Posición mapeada:', mappedPosition);
+    // Caso 2: Solo modelo (SIN marca) - NUEVO Y CLAVE
+    else if (parsedQuery.model) {
+      console.log('🔧 [PIPELINE] Filtrando SOLO por MODELO:', parsedQuery.model);
       
-      matchConditions["detalles_tecnicos.Posición de la pieza"] = { 
-        $regex: mappedPosition, 
-        $options: 'i' 
+      vehicleCondition = {
+        $elemMatch: {
+          modelo: { $regex: parsedQuery.model, $options: 'i' }
+        }
+      };
+    }
+    // Caso 3: Solo marca (sin modelo)
+    else if (parsedQuery.brand) {
+      console.log('🔧 [PIPELINE] Filtrando SOLO por MARCA:', parsedQuery.brand);
+      
+      vehicleCondition = {
+        $elemMatch: {
+          marca: { $regex: parsedQuery.brand, $options: 'i' }
+        }
       };
     }
     
-    // ✅ FILTRAR POR AÑO/VERSIÓN (más permisivo)
-    if (parsedQuery.year || parsedQuery.version) {
-      console.log('🔧 [PIPELINE] Filtrando por año/versión:', parsedQuery.year, parsedQuery.version);
+    // ✅ 3. AGREGAR FILTRO DE AÑO A LA CONDICIÓN DE VEHÍCULO
+    if (parsedQuery.year && vehicleCondition) {
+      console.log('🔧 [PIPELINE] Agregando filtro de AÑO:', parsedQuery.year);
       
-      const versionConditions = [];
+      const year2digit = parsedQuery.year.slice(-2);
+      console.log('🔧 [PIPELINE] Año 2 dígitos:', year2digit);
       
-      if (parsedQuery.version) {
-        versionConditions.push({
-          "aplicaciones.version": { $regex: parsedQuery.version, $options: 'i' }
-        });
-      }
+      // ✅ PATRONES DE BÚSQUEDA DE AÑO MEJORADOS
+      const yearPatterns = [
+        `\\(${year2digit}/`,           // (09/..
+        `\\(${parsedQuery.year}`,      // (2009
+        `/${year2digit}\\)`,           // ../09)
+        `/${parsedQuery.year}\\)`,     // ../2009)
+        `\\(${year2digit}\\)`,         // (09)
+        `\\(${parsedQuery.year}\\)`,   // (2009)
+        year2digit,                    // solo 09
+        parsedQuery.year               // solo 2009
+      ];
       
-      if (parsedQuery.year) {
-        // Buscar el año en formato de 2 o 4 dígitos
-        const year2digit = parsedQuery.year.slice(-2);
-        console.log('🔧 [PIPELINE] Buscando año 2 dígitos:', year2digit);
-        
-        // Buscar patrones como (84/..) o (1984/..)
-        versionConditions.push({
-          "aplicaciones.version": { $regex: `\\(${year2digit}/`, $options: 'i' }
-        });
-        
-        // También buscar el año completo
-        versionConditions.push({
-          "aplicaciones.version": { $regex: parsedQuery.year, $options: 'i' }
-        });
-      }
-      
-      if (versionConditions.length > 0) {
-        // Si ya hay otras condiciones, combinar con $and
-        if (matchConditions.$or) {
-          matchConditions.$and = [
-            { $or: matchConditions.$or },
-            { $or: versionConditions }
-          ];
-          delete matchConditions.$or;
-        } else {
-          matchConditions.$or = versionConditions;
-        }
+      // Agregar condiciones de año al $elemMatch existente
+      vehicleCondition.$elemMatch.$or = yearPatterns.map(pattern => ({
+        version: { $regex: pattern, $options: 'i' }
+      }));
+    }
+    
+    // Aplicar condición de vehículo si existe
+    if (vehicleCondition) {
+      if (matchConditions.$or) {
+        // Ya existe $or (de búsqueda de producto), usar $and
+        matchConditions.$and = [
+          { $or: matchConditions.$or },
+          { aplicaciones: vehicleCondition }
+        ];
+        delete matchConditions.$or;
+      } else {
+        matchConditions.aplicaciones = vehicleCondition;
       }
     }
     
-    console.log('🔧 [PIPELINE] Condiciones finales:', JSON.stringify(matchConditions, null, 2));
+    // ✅ 4. FILTRAR POR POSICIÓN (MEJORADO)
+    if (parsedQuery.position) {
+      const mappedPosition = mapPositionForSearch(parsedQuery.position);
+      console.log('🔧 [PIPELINE] Filtrando por POSICIÓN:', parsedQuery.position, '→', mappedPosition);
+      
+      const positionCondition = {
+        "detalles_tecnicos.Posición de la pieza": { 
+          $regex: mappedPosition, 
+          $options: 'i' 
+        }
+      };
+      
+      // Combinar con condiciones existentes
+      if (matchConditions.$and) {
+        matchConditions.$and.push(positionCondition);
+      } else if (matchConditions.$or) {
+        matchConditions.$and = [
+          { $or: matchConditions.$or },
+          positionCondition
+        ];
+        delete matchConditions.$or;
+      } else {
+        Object.assign(matchConditions, positionCondition);
+      }
+    }
+    
+    // ✅ 5. MANEJAR CASOS ESPECIALES DE BÚSQUEDA
+    // Caso: Solo año sin modelo ni marca
+    if (parsedQuery.year && !parsedQuery.model && !parsedQuery.brand) {
+      console.log('🔧 [PIPELINE] Filtrando SOLO por AÑO:', parsedQuery.year);
+      
+      const year2digit = parsedQuery.year.slice(-2);
+      const yearOnlyConditions = [
+        { "aplicaciones.version": { $regex: `\\(${year2digit}/`, $options: 'i' } },
+        { "aplicaciones.version": { $regex: parsedQuery.year, $options: 'i' } }
+      ];
+      
+      if (matchConditions.$and) {
+        matchConditions.$and.push({ $or: yearOnlyConditions });
+      } else if (matchConditions.$or) {
+        matchConditions.$and = [
+          { $or: matchConditions.$or },
+          { $or: yearOnlyConditions }
+        ];
+        delete matchConditions.$or;
+      } else {
+        matchConditions.$or = yearOnlyConditions;
+      }
+    }
+    
+    console.log('🔧 [PIPELINE] Condiciones finales del match:', JSON.stringify(matchConditions, null, 2));
     pipeline.push({ $match: matchConditions });
     
   } else {
-    // ✅ FALLBACK: buscar cualquier cosa
-    console.log('🔧 [PIPELINE] Búsqueda fallback');
-    pipeline.push({ $match: { tiene_precio_valido: true } });
+    // ✅ FALLBACK: Búsqueda básica
+    console.log('🔧 [PIPELINE] Búsqueda fallback - productos con precio válido');
+    pipeline.push({ 
+      $match: { 
+        tiene_precio_valido: true 
+      } 
+    });
   }
   
-  // ✅ SCORING BÁSICO
+  // ✅ 6. SCORING INTELIGENTE Y MEJORADO
   pipeline.push({
     $addFields: {
       relevanceScore: {
         $add: [
+          // Score base por existir
+          10,
+          
+          // Score alto por tener nombre relevante
           { $cond: [{ $ne: ["$nombre", null] }, 100, 0] },
-          { $cond: [{ $gt: [{ $size: { $ifNull: ["$aplicaciones", []] } }, 0] }, 50, 0] }
+          
+          // Score por cantidad de aplicaciones (más aplicaciones = más versátil)
+          { $multiply: [{ $size: { $ifNull: ["$aplicaciones", []] } }, 15] },
+          
+          // Score por tener detalles técnicos completos
+          { $cond: [{ $ne: ["$detalles_tecnicos", null] }, 50, 0] },
+          
+          // Score por tener equivalencias (compatibilidad)
+          { $multiply: [{ $size: { $ifNull: ["$equivalencias", []] } }, 20] },
+          
+          // Score por tener imagen
+          { $cond: [{ $and: [
+            { $ne: ["$imagen", null] },
+            { $not: { $regexMatch: { input: "$imagen", regex: "noimage" } } }
+          ]}, 25, 0] },
+          
+          // ✅ NUEVO: Score específico según tipo de búsqueda
+          { $cond: [
+            { $regexMatch: { input: "$codigo", regex: "^[0-9]+[A-Z]*$" } }, // Código numérico + letras
+            30, 0
+          ]},
+          
+          // Score por marca reconocida
+          { $cond: [{ $in: ["$marca", ["CORVEN", "SADAR", "FERODO", "JURID", "VALEO"]] }, 40, 0] }
         ]
       }
     }
   });
   
-  // ✅ ORDENAR Y PAGINAR
-  pipeline.push({ $sort: { relevanceScore: -1, codigo: 1 } });
-  if (offset > 0) pipeline.push({ $skip: offset });
+  // ✅ 7. ORDENAMIENTO INTELIGENTE
+  pipeline.push({ 
+    $sort: { 
+      relevanceScore: -1,  // Mayor relevancia primero
+      codigo: 1            // Luego por código alfabéticamente
+    } 
+  });
+  
+  // ✅ 8. PAGINACIÓN
+  if (offset > 0) {
+    pipeline.push({ $skip: offset });
+  }
+  
   pipeline.push({ $limit: limit });
-  pipeline.push({ $project: { relevanceScore: 0, _id: 0 } });
+  
+  // ✅ 9. PROYECCIÓN FINAL (limpiar campos internos)
+  pipeline.push({ 
+    $project: { 
+      relevanceScore: 0,  // No mostrar score en respuesta
+      _id: 0              // No mostrar _id de MongoDB
+    } 
+  });
+  
+  console.log('🔧 [PIPELINE] Pipeline completo construido con', pipeline.length, 'etapas');
   
   return pipeline;
 }
@@ -1030,34 +1179,127 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
 function getValidCategoriesForProduct(product) {
   const categoryMap = {
     'amortiguador': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
+    'amortiguadores': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
+    
     'pastilla': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+    'pastillas': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+    'freno': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+    'frenos': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+    
     'disco': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
+    'discos': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
+    'campana': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
+    'campanas': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
+    
     'cazoleta': ['Cazoletas CORVEN', 'Cazoletas SADAR'],
+    'cazoletas': ['Cazoletas CORVEN', 'Cazoletas SADAR'],
+    
     'bieleta': ['Bieletas CORVEN', 'Bieletas SADAR'],
+    'bieletas': ['Bieletas CORVEN', 'Bieletas SADAR'],
+    'biela': ['Bieletas CORVEN', 'Bieletas SADAR'],
+    'bielas': ['Bieletas CORVEN', 'Bieletas SADAR'],
+    
     'rotula': ['Rotulas CORVEN', 'Rotulas SADAR'],
-    'embrague': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO']
+    'rotulas': ['Rotulas CORVEN', 'Rotulas SADAR'],
+    'rótula': ['Rotulas CORVEN', 'Rotulas SADAR'],
+    'rótulas': ['Rotulas CORVEN', 'Rotulas SADAR'],
+    
+    'embrague': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
+    'embragues': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
+    'clutch': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
+    
+    'brazo': ['Brazos Susp CORVEN', 'Brazos Susp SADAR'],
+    'brazos': ['Brazos Susp CORVEN', 'Brazos Susp SADAR'],
+    
+    'extremo': ['Extremos CORVEN', 'Extremos SADAR'],
+    'extremos': ['Extremos CORVEN', 'Extremos SADAR'],
+    
+    'axial': ['Axiales CORVEN', 'Axiales SADAR'],
+    'axiales': ['Axiales CORVEN', 'Axiales SADAR'],
+    
+    'homocinetica': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
+    'homocinéticas': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
+    'homocinética': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
+    'junta': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
+    'juntas': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
+    
+    'rodamiento': ['Rodamientos CORVEN', 'Rodamientos SADAR'],
+    'rodamientos': ['Rodamientos CORVEN', 'Rodamientos SADAR'],
+    'ruleman': ['Rodamientos CORVEN', 'Rodamientos SADAR'],
+    'rulemanes': ['Rodamientos CORVEN', 'Rodamientos SADAR'],
+    
+    'maza': ['Mazas CORVEN', 'Mazas HF'],
+    'mazas': ['Mazas CORVEN', 'Mazas HF'],
+    'buje': ['Mazas CORVEN', 'Mazas HF'],
+    'bujes': ['Mazas CORVEN', 'Mazas HF'],
+    
+    'semieje': ['Semiejes CORVEN'],
+    'semiejes': ['Semiejes CORVEN'],
+    'eje': ['Semiejes CORVEN'],
+    'ejes': ['Semiejes CORVEN'],
+    
+    'soporte': ['Soporte Motor CORVEN'],
+    'soportes': ['Soporte Motor CORVEN'],
+    
+    'parrilla': ['Parrillas CORVEN', 'Parrillas SADAR'],
+    'parrillas': ['Parrillas CORVEN', 'Parrillas SADAR'],
+    
+    'barra': ['Barras HD SADAR'],
+    'barras': ['Barras HD SADAR'],
+    
+    'caja': ['Cajas Mec CORVEN', 'Cajas Hid CORVEN'],
+    'cajas': ['Cajas Mec CORVEN', 'Cajas Hid CORVEN'],
+    'bomba': ['Bombas Hid CORVEN'],
+    'bombas': ['Bombas Hid CORVEN'],
+    
+    'suspension': ['Susp Neumática SADAR'],
+    'suspensión': ['Susp Neumática SADAR'],
+    'neumática': ['Susp Neumática SADAR'],
+    'neumatica': ['Susp Neumática SADAR']
   };
   
-  return categoryMap[product] || [];
+  const normalizedProduct = product.toLowerCase().trim();
+  return categoryMap[normalizedProduct] || [];
 }
+
 
 function mapPositionForSearch(position) {
   const positionMap = {
     'delantero': 'Delantero',
-    'del': 'Delantero', 
+    'delanteros': 'Delantero',
+    'del': 'Delantero',
+    'anterior': 'Delantero',
+    'frontal': 'Delantero',
+    'delantera': 'Delantero',
+    'delanteras': 'Delantero',
+    
     'trasero': 'Trasero',
+    'traseros': 'Trasero', 
     'pos': 'Trasero',
+    'posterior': 'Trasero',
+    'trasera': 'Trasero',
+    'traseras': 'Trasero',
+    
     'izquierdo': 'Izquierdo',
-    'izquierda': 'Izquierdo', // NUEVO
+    'izquierda': 'Izquierdo',
     'izq': 'Izquierdo',
+    
     'derecho': 'Derecho',
-    'derecha': 'Derecho', // NUEVO
+    'derecha': 'Derecho',
     'der': 'Derecho',
-    'ambos_lados': '(Izquierdo|Derecho|Bilateral)', // NUEVO - regex para ambos
-    'bilateral': '(Izquierdo|Derecho|Bilateral)', // NUEVO
-    'izquierda': '(izquierda y derecha|derecha y izquierda|izq y der|izq y derecha|izq y izquierda)',
-    'derecha': '(izquierda y derecha)' 
+    
+    'superior': 'Superior',
+    'sup': 'Superior',
+    'arriba': 'Superior',
+    
+    'inferior': 'Inferior',
+    'inf': 'Inferior',
+    'abajo': 'Inferior',
+    
+    'ambos_lados': '(Izquierdo|Derecho|Bilateral|izquierda y derecha)',
+    'bilateral': '(Izquierdo|Derecho|Bilateral)'
   };
   
-  return positionMap[position] || position;
+  const normalizedPosition = position.toLowerCase().trim();
+  return positionMap[normalizedPosition] || position;
 }
