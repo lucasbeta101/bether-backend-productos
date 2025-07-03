@@ -750,12 +750,63 @@ function formatearParaBusqueda(query) {
   return formatted;
 }
 
+javascript// 🧠 PARSEAR CONSULTA NATURAL - VERSIÓN COMPLETA
 function parseNaturalQuery(query) {
   const normalized = normalizeText(query);
   console.log('🔍 [BACKEND] Parseando query:', normalized);
 
-  // ✅ PATRONES COMPLEJOS PRIMERO (incluyendo año y versión)
+  // ✅ PATRONES COMPLEJOS COMPLETOS
   const complexPatterns = [
+    // "bieleta fiat 500 2009 izquierda y derecha" - NUEVO PATRÓN
+    {
+      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})\s+(izquierda\s+y\s+derecha|izq\s+y\s+der|bilateral|ambos\s+lados|par)$/i,
+      extract: (match) => ({
+        product: match[1].trim(),
+        brand: match[2].trim(),
+        model: match[3].trim(),
+        year: match[4].trim(),
+        position: 'ambos_lados',
+        isStructured: true
+      })
+    },
+
+    // "bieleta izquierda fiat 500 2009" - POSICIÓN AL PRINCIPIO
+    {
+      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+(delantero|trasero|izquierdo|derecho|izquierda|del|pos|izq|der)\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})$/i,
+      extract: (match) => ({
+        product: match[1].trim(),
+        position: match[2].trim(),
+        brand: match[3].trim(),
+        model: match[4].trim(),
+        year: match[5].trim(),
+        isStructured: true
+      })
+    },
+
+    // "bieleta fiat 500 2009" - SIN POSICIÓN NI VERSIÓN
+    {
+      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})$/i,
+      extract: (match) => ({
+        product: match[1].trim(),
+        brand: match[2].trim(),
+        model: match[3].trim(),
+        year: match[4].trim(),
+        isStructured: true
+      })
+    },
+
+    // "bieleta fiat 500" - SIN AÑO
+    {
+      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+([a-z]+)\s+([a-z0-9]+)$/i,
+      extract: (match) => ({
+        product: match[1].trim(),
+        brand: match[2].trim(),
+        model: match[3].trim(),
+        isStructured: true
+      })
+    },
+
+    // PATRONES EXISTENTES (mantener orden)
     // "amortiguador delantero para peugeot 205 1984 XS"
     {
       pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+(delantero|trasero|del|pos|izq|der|superior|inferior)\s+para\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})\s+([a-z0-9]+)$/i,
@@ -783,7 +834,7 @@ function parseNaturalQuery(query) {
       })
     },
 
-    // PATRONES ORIGINALES
+    // PATRONES ORIGINALES (mantener)
     {
       pattern: /^(.+?)\s+(delantero|trasero|anterior|posterior|izquierdo|derecho|del|pos|izq|der|superior|inferior|sup|inf)\s+para\s+(.+?)\s+(.+?)(?:\s+(.+))?$/i,
       extract: (match) => ({
@@ -997,9 +1048,13 @@ function mapPositionForSearch(position) {
     'trasero': 'Trasero',
     'pos': 'Trasero',
     'izquierdo': 'Izquierdo',
+    'izquierda': 'Izquierdo', // NUEVO
     'izq': 'Izquierdo',
     'derecho': 'Derecho',
-    'der': 'Derecho'
+    'derecha': 'Derecho', // NUEVO
+    'der': 'Derecho',
+    'ambos_lados': '(Izquierdo|Derecho|Bilateral)', // NUEVO - regex para ambos
+    'bilateral': '(Izquierdo|Derecho|Bilateral)' // NUEVO
   };
   
   return positionMap[position] || position;
