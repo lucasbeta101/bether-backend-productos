@@ -796,62 +796,55 @@ function parseNaturalQuery(query) {
 }
 
 
-// 🏗 CONSTRUIR PIPELINE DE BÚSQUEDA MEJORADO - CORREGIDO
-// 🏗 CONSTRUIR PIPELINE DE BÚSQUEDA - REGEX SEGURO
+
+
 function buildSearchPipeline(parsedQuery, limit, offset) {
   const pipeline = [];
   
   if (parsedQuery.freeText) {
     const formatted = formatearParaBusqueda(parsedQuery.freeText);
     const searchText = parsedQuery.freeText.trim();
-    
-    // ✅ ESCAPAR CARACTERES ESPECIALES PARA REGEX
     const escapedSearchText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     
     console.log('🎯 [FORMATO] Query original:', searchText);
-    console.log('🎯 [FORMATO] Query escapada:', escapedSearchText);
     console.log('🎯 [FORMATO] Query formateada:', formatted);
     
     const searchConditions = [];
     
-    // 1. BÚSQUEDA EXACTA POR CÓDIGO (sin regex)
-    searchConditions.push({ codigo: searchText });
+    // 1. BÚSQUEDAS EXACTAS (sin regex)
+    searchConditions.push(
+      { codigo: searchText },
+      { "equivalencias.codigo": searchText }
+    );
     
-    // 2. BÚSQUEDA POR CÓDIGO CON REGEX SEGURO
+    // 2. BÚSQUEDAS CON REGEX SIMPLE (solo en campos que sabemos que existen)
     if (searchText.length > 2) {
-      searchConditions.push({ codigo: { $regex: escapedSearchText, $options: 'i' } });
-    }
-    
-    // 3. EQUIVALENCIAS EXACTAS
-    searchConditions.push({ "equivalencias.codigo": searchText });
-    
-    // 4. EQUIVALENCIAS CON REGEX SEGURO
-    if (searchText.length > 2) {
-      searchConditions.push({ "equivalencias.codigo": { $regex: escapedSearchText, $options: 'i' } });
-    }
-    
-    // 5. BÚSQUEDA CON ÍNDICE COMPUESTO (si tenemos datos formateados)
-    if (formatted.categoria && formatted.posicion && formatted.marca && formatted.modelo) {
-      const compoundMatch = {
-        categoria: formatted.categoria,
-        "detalles_tecnicos.Posición de la pieza": formatted.posicion,
-        "aplicaciones.marca": formatted.marca,
-        "aplicaciones.modelo": formatted.modelo
-      };
-      searchConditions.push(compoundMatch);
-    }
-    
-    // 6. BÚSQUEDAS INDIVIDUALES CON REGEX SEGURO
-    if (escapedSearchText.length > 2) {
       searchConditions.push(
+        { codigo: { $regex: escapedSearchText, $options: 'i' } },
         { nombre: { $regex: escapedSearchText, $options: 'i' } },
         { categoria: { $regex: escapedSearchText, $options: 'i' } },
+        { "equivalencias.codigo": { $regex: escapedSearchText, $options: 'i' } },
         { "aplicaciones.marca": { $regex: escapedSearchText, $options: 'i' } },
         { "aplicaciones.modelo": { $regex: escapedSearchText, $options: 'i' } }
       );
     }
     
-    // 7. BÚSQUEDAS POR TÉRMINOS INDIVIDUALES
+    // 3. BÚSQUEDA CON ÍNDICE COMPUESTO (si tenemos datos formateados)
+    if (formatted.categoria && formatted.marca && formatted.modelo) {
+      const compoundMatch = {
+        categoria: formatted.categoria,
+        "aplicaciones.marca": formatted.marca,
+        "aplicaciones.modelo": formatted.modelo
+      };
+      
+      if (formatted.posicion) {
+        compoundMatch["detalles_tecnicos.Posición de la pieza"] = formatted.posicion;
+      }
+      
+      searchConditions.push(compoundMatch);
+    }
+    
+    // 4. BÚSQUEDAS POR TÉRMINOS INDIVIDUALES
     const terms = searchText.toLowerCase().split(/\s+/).filter(t => t.length > 1);
     terms.forEach(term => {
       const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -861,15 +854,14 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
         { nombre: { $regex: escapedTerm, $options: 'i' } },
         { categoria: { $regex: escapedTerm, $options: 'i' } },
         { "aplicaciones.marca": { $regex: escapedTerm, $options: 'i' } },
-        { "aplicaciones.modelo": { $regex: escapedTerm, $options: 'i' } },
-        { "equivalencias.codigo": { $regex: escapedTerm, $options: 'i' } }
+        { "aplicaciones.modelo": { $regex: escapedTerm, $options: 'i' } }
       );
     });
     
     pipeline.push({ $match: { $or: searchConditions } });
     
   } else {
-    // ✅ BÚSQUEDA ESTRUCTURADA (mantener)
+    // BÚSQUEDA ESTRUCTURADA
     const conditions = [];
     
     if (parsedQuery.product) {
@@ -896,7 +888,7 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     });
   }
   
-  // ✅ SCORING MEJORADO
+  // ✅ SCORING SIMPLIFICADO (SIN $regexMatch problemático)
   pipeline.push({
     $addFields: {
       relevanceScore: {
@@ -904,64 +896,19 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
           // Código exacto = 1000
           { $cond: [{ $eq: ["$codigo", parsedQuery.freeText || ""] }, 1000, 0] },
           
-          // Equivalencia exacta = 900
+          // Equivalencia exacta = 900  
           { $cond: [{ $in: [parsedQuery.freeText || "", "$equivalencias.codigo"] }, 900, 0] },
           
-          // Código contiene (para códigos como 0714FN-K) = 800
-          { $cond: [
-            { $regexMatch: { 
-              input: "$codigo", 
-              regex: (parsedQuery.freeText || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 
-              options: "i" 
-            }},
-            800, 0
-          ]},
+          // Si el nombre existe y no es null = 100 puntos base
+          { $cond: [{ $and: [{ $ne: ["$nombre", null] }, { $ne: ["$nombre", ""] }] }, 100, 0] },
           
-          // Nombre contiene = 300
-          { $cond: [
-            { $regexMatch: { 
-              input: "$nombre", 
-              regex: (parsedQuery.freeText || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 
-              options: "i" 
-            }},
-            300, 0
-          ]},
+          // Si tiene aplicaciones = 50 puntos base
+          { $cond: [{ $gt: [{ $size: { $ifNull: ["$aplicaciones", []] } }, 0] }, 50, 0] },
           
-          // Categoría = 200
+          // Puntos por categoría formateada
           { $cond: [
-            { $regexMatch: { 
-              input: "$categoria", 
-              regex: (parsedQuery.freeText || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 
-              options: "i" 
-            }},
+            { $in: ["$categoria", ["Amort CORVEN", "Pastillas CORVEN HT", "Discos y Camp CORVEN"]] },
             200, 0
-          ]},
-          
-          // Aplicación marca/modelo = 400
-          { $cond: [
-            { $gt: [
-              { $size: {
-                $filter: {
-                  input: "$aplicaciones",
-                  cond: {
-                    $or: [
-                      { $regexMatch: { 
-                        input: "$$this.marca", 
-                        regex: (parsedQuery.freeText || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 
-                        options: "i" 
-                      }},
-                      { $regexMatch: { 
-                        input: "$$this.modelo", 
-                        regex: (parsedQuery.freeText || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 
-                        options: "i" 
-                      }}
-                    ]
-                  }
-                }
-              }},
-              0
-            ]},
-            400, 0
           ]}
         ]
       }
