@@ -425,5 +425,410 @@ router.get('/filtros/:tipo', async (req, res) => {
     });
   }
 });
-
 module.exports = router;
+// ===== AGREGAR ESTOS ENDPOINTS A TU productos.js =====
+
+// 🔍 BÚSQUEDA INTELIGENTE - Endpoint principal
+router.get('/busqueda', async (req, res) => {
+  try {
+    const { 
+      q,           // Query de búsqueda
+      limit = 20,  // Límite de resultados
+      offset = 0   // Para paginación
+    } = req.query;
+
+    if (!q || q.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Query de búsqueda requerida (mínimo 2 caracteres)'
+      });
+    }
+
+    console.log('🔍 [BÚSQUEDA] Query:', q);
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // ✅ PARSEAR QUERY CON PATRONES INTELIGENTES
+    const parsedQuery = parseNaturalQuery(q.trim());
+    console.log('🧠 [BÚSQUEDA] Query parseada:', parsedQuery);
+
+    // ✅ CONSTRUIR PIPELINE DE AGREGACIÓN
+    const pipeline = buildSearchPipeline(parsedQuery, parseInt(limit), parseInt(offset));
+    console.log('📋 [BÚSQUEDA] Pipeline:', JSON.stringify(pipeline, null, 2));
+
+    // ✅ EJECUTAR BÚSQUEDA
+    const startTime = Date.now();
+    const results = await collection.aggregate(pipeline).toArray();
+    const processingTime = Date.now() - startTime;
+
+    console.log(`✅ [BÚSQUEDA] ${results.length} resultados en ${processingTime}ms`);
+
+    res.json({
+      success: true,
+      query: q,
+      parsedQuery: parsedQuery,
+      results: results,
+      totalResults: results.length,
+      processingTime: processingTime,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [BÚSQUEDA] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error en búsqueda'
+    });
+  }
+});
+
+// 💡 SUGERENCIAS - Para auto-completado
+router.get('/sugerencias', async (req, res) => {
+  try {
+    const { q, limit = 8 } = req.query;
+
+    if (!q || q.trim().length < 2) {
+      return res.json({
+        success: true,
+        suggestions: []
+      });
+    }
+
+    console.log('💡 [SUGERENCIAS] Query:', q);
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const suggestions = new Set();
+    const normalizedQuery = normalizeText(q);
+
+    // ✅ SUGERENCIAS DE CÓDIGOS
+    const codigoMatches = await collection.find(
+      { codigo: { $regex: normalizedQuery, $options: 'i' } },
+      { projection: { codigo: 1, _id: 0 }, limit: 3 }
+    ).toArray();
+    
+    codigoMatches.forEach(p => suggestions.add(p.codigo));
+
+    // ✅ SUGERENCIAS DE MARCAS Y MODELOS
+    const vehicleMatches = await collection.aggregate([
+      { $unwind: "$aplicaciones" },
+      { $match: { 
+        $or: [
+          { "aplicaciones.marca": { $regex: normalizedQuery, $options: 'i' } },
+          { "aplicaciones.modelo": { $regex: normalizedQuery, $options: 'i' } }
+        ]
+      }},
+      { $group: { 
+        _id: null, 
+        marcas: { $addToSet: "$aplicaciones.marca" },
+        modelos: { $addToSet: "$aplicaciones.modelo" }
+      }},
+      { $limit: 1 }
+    ]).toArray();
+
+    if (vehicleMatches.length > 0) {
+      const { marcas, modelos } = vehicleMatches[0];
+      marcas.slice(0, 2).forEach(marca => {
+        if (marca.toLowerCase().includes(normalizedQuery)) {
+          suggestions.add(marca);
+        }
+      });
+      modelos.slice(0, 2).forEach(modelo => {
+        if (modelo.toLowerCase().includes(normalizedQuery)) {
+          suggestions.add(modelo);
+        }
+      });
+    }
+
+    // ✅ SUGERENCIAS DE PRODUCTOS
+    const productMatches = await collection.find(
+      { nombre: { $regex: normalizedQuery, $options: 'i' } },
+      { projection: { nombre: 1, _id: 0 }, limit: 2 }
+    ).toArray();
+    
+    productMatches.forEach(p => {
+      const words = p.nombre.split(' ').slice(0, 3).join(' ');
+      suggestions.add(words);
+    });
+
+    const finalSuggestions = Array.from(suggestions).slice(0, parseInt(limit));
+
+    console.log(`💡 [SUGERENCIAS] ${finalSuggestions.length} sugerencias generadas`);
+
+    res.json({
+      success: true,
+      query: q,
+      suggestions: finalSuggestions,
+      count: finalSuggestions.length
+    });
+
+  } catch (error) {
+    console.error('❌ [SUGERENCIAS] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al obtener sugerencias'
+    });
+  }
+});
+
+// 🧠 METADATOS PARA BÚSQUEDA - Datos livianos para el cliente
+router.get('/metadatos-busqueda', async (req, res) => {
+  try {
+    console.log('🧠 [METADATOS-BÚSQUEDA] Cargando datos livianos...');
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // ✅ SOLO CAMPOS NECESARIOS PARA BÚSQUEDA CLIENT-SIDE
+    const metadatos = await collection.find({}, {
+      projection: {
+        codigo: 1,
+        nombre: 1,
+        categoria: 1,
+        marca: 1,
+        "aplicaciones.marca": 1,
+        "aplicaciones.modelo": 1,
+        "aplicaciones.version": 1,
+        _id: 0
+      }
+    }).toArray();
+
+    // ✅ CREAR ÍNDICE DE BÚSQUEDA LIVIANO
+    const searchIndex = {
+      codes: [],
+      brands: new Set(),
+      models: new Set(),
+      categories: new Set(),
+      vehicles: new Set()
+    };
+
+    metadatos.forEach(product => {
+      searchIndex.codes.push(product.codigo);
+      searchIndex.categories.add(product.categoria);
+      if (product.marca) searchIndex.brands.add(product.marca);
+      
+      if (product.aplicaciones) {
+        product.aplicaciones.forEach(app => {
+          if (app.marca) searchIndex.brands.add(app.marca);
+          if (app.modelo) searchIndex.models.add(app.modelo);
+          if (app.marca && app.modelo) {
+            searchIndex.vehicles.add(`${app.marca} ${app.modelo}`);
+          }
+        });
+      }
+    });
+
+    // Convertir Sets a Arrays
+    const finalIndex = {
+      codes: searchIndex.codes,
+      brands: Array.from(searchIndex.brands),
+      models: Array.from(searchIndex.models), 
+      categories: Array.from(searchIndex.categories),
+      vehicles: Array.from(searchIndex.vehicles)
+    };
+
+    console.log(`🧠 [METADATOS-BÚSQUEDA] Índice generado: ${metadatos.length} productos`);
+
+    res.json({
+      success: true,
+      count: metadatos.length,
+      searchIndex: finalIndex,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [METADATOS-BÚSQUEDA] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al obtener metadatos de búsqueda'
+    });
+  }
+});
+
+// ===== FUNCIONES AUXILIARES =====
+
+// 🔤 NORMALIZAR TEXTO
+function normalizeText(text) {
+  if (!text) return '';
+  return text
+    .toString()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Quitar tildes
+    .replace(/[^\w\s\/]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .trim();
+}
+
+// 🧠 PARSEAR CONSULTA NATURAL
+function parseNaturalQuery(query) {
+  const normalized = normalizeText(query);
+  console.log('🔍 Parseando query:', normalized);
+
+  // ✅ PATRONES DE BÚSQUEDA (manteniendo la lógica original)
+  const patterns = [
+    // "producto posicion para marca modelo"
+    {
+      pattern: /^(.+?)\s+(delantero|trasero|anterior|posterior|izquierdo|derecho|del|pos|izq|der|superior|inferior|sup|inf)\s+para\s+(.+?)\s+(.+?)(?:\s+(.+))?$/i,
+      extract: (match) => ({
+        product: match[1].trim(),
+        position: match[2].trim(),
+        brand: match[3].trim(),
+        model: match[4].trim(),
+        version: match[5]?.trim() || null
+      })
+    },
+    
+    // "producto para marca modelo"
+    {
+      pattern: /^(.+?)\s+para\s+(.+?)\s+(.+?)(?:\s+(.+))?$/i,
+      extract: (match) => ({
+        product: match[1].trim(),
+        brand: match[2].trim(),
+        model: match[3].trim(),
+        version: match[4]?.trim() || null
+      })
+    },
+    
+    // "marca modelo producto"
+    {
+      pattern: /^(ford|chevrolet|volkswagen|vw|peugeot|renault|fiat|toyota|nissan|honda|hyundai|kia|mazda|mitsubishi|bmw|audi|mercedes|citroen|opel|seat|volvo|subaru|suzuki)\s+([a-z0-9]+)\s+(.+)$/i,
+      extract: (match) => ({
+        brand: match[1].trim(),
+        model: match[2].trim(),
+        product: match[3].trim()
+      })
+    }
+  ];
+
+  // Intentar cada patrón
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern.pattern);
+    if (match) {
+      const parsed = pattern.extract(match);
+      console.log('✅ Patrón encontrado:', parsed);
+      return parsed;
+    }
+  }
+
+  console.log('🔍 Búsqueda libre para:', normalized);
+  return { freeText: normalized };
+}
+
+// 🏗 CONSTRUIR PIPELINE DE BÚSQUEDA
+function buildSearchPipeline(parsedQuery, limit, offset) {
+  const pipeline = [];
+  let matchStage = {};
+
+  if (parsedQuery.freeText) {
+    // ✅ BÚSQUEDA LIBRE CON TEXTO
+    const searchTerms = parsedQuery.freeText.split(/\s+/).filter(t => t.length > 1);
+    const orConditions = [];
+
+    searchTerms.forEach(term => {
+      orConditions.push(
+        { codigo: { $regex: term, $options: 'i' } },
+        { nombre: { $regex: term, $options: 'i' } },
+        { categoria: { $regex: term, $options: 'i' } },
+        { marca: { $regex: term, $options: 'i' } },
+        { "aplicaciones.marca": { $regex: term, $options: 'i' } },
+        { "aplicaciones.modelo": { $regex: term, $options: 'i' } },
+        { "aplicaciones.version": { $regex: term, $options: 'i' } }
+      );
+    });
+
+    matchStage.$or = orConditions;
+
+  } else {
+    // ✅ BÚSQUEDA ESTRUCTURADA
+    if (parsedQuery.product) {
+      matchStage.$or = [
+        { categoria: { $regex: parsedQuery.product, $options: 'i' } },
+        { nombre: { $regex: parsedQuery.product, $options: 'i' } }
+      ];
+    }
+
+    if (parsedQuery.brand || parsedQuery.model || parsedQuery.version) {
+      const aplicacionesMatch = {};
+      if (parsedQuery.brand) aplicacionesMatch["aplicaciones.marca"] = { $regex: parsedQuery.brand, $options: 'i' };
+      if (parsedQuery.model) aplicacionesMatch["aplicaciones.modelo"] = { $regex: parsedQuery.model, $options: 'i' };
+      if (parsedQuery.version) aplicacionesMatch["aplicaciones.version"] = { $regex: parsedQuery.version, $options: 'i' };
+      
+      Object.assign(matchStage, aplicacionesMatch);
+    }
+
+    if (parsedQuery.position) {
+      matchStage["detalles_tecnicos.Posición de la pieza"] = { $regex: parsedQuery.position, $options: 'i' };
+    }
+  }
+
+  // ✅ PIPELINE STAGES
+  pipeline.push({ $match: matchStage });
+
+  // ✅ SCORING (simulado con $addFields)
+  pipeline.push({
+    $addFields: {
+      score: {
+        $add: [
+          // Score por código exacto
+          { $cond: [
+            { $regexMatch: { input: "$codigo", regex: parsedQuery.freeText || parsedQuery.product || "", options: "i" } },
+            100, 0
+          ]},
+          // Score por nombre
+          { $cond: [
+            { $regexMatch: { input: "$nombre", regex: parsedQuery.freeText || parsedQuery.product || "", options: "i" } },
+            80, 0
+          ]},
+          // Score por categoría
+          { $cond: [
+            { $regexMatch: { input: "$categoria", regex: parsedQuery.freeText || parsedQuery.product || "", options: "i" } },
+            70, 0
+          ]}
+        ]
+      }
+    }
+  });
+
+  // ✅ ORDENAR POR RELEVANCIA
+  pipeline.push({ $sort: { score: -1, codigo: 1 } });
+
+  // ✅ PAGINACIÓN
+  if (offset > 0) pipeline.push({ $skip: offset });
+  pipeline.push({ $limit: limit });
+
+  // ✅ REMOVER SCORE DEL RESULTADO FINAL
+  pipeline.push({ $project: { score: 0, _id: 0 } });
+
+  return pipeline;
+}
+
+// ===== SINÓNIMOS Y MAPEOS (del frontend original) =====
+const BRAND_SYNONYMS = {
+  'vw': 'volkswagen',
+  'volks': 'volkswagen', 
+  'chevy': 'chevrolet',
+  'chev': 'chevrolet',
+  'mercedes': 'mercedes benz',
+  'benz': 'mercedes benz'
+};
+
+const PRODUCT_CATEGORIES = {
+  'amortiguador': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
+  'amortiguadores': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
+  'pastilla': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+  'pastillas': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+  'freno': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+  'frenos': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+  'disco': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
+  'discos': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
+  'embrague': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
+  'embragues': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
+  'rotula': ['Rotulas CORVEN', 'Rotulas SADAR'],
+  'rotulas': ['Rotulas CORVEN', 'Rotulas SADAR']
+};
