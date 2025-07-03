@@ -1041,7 +1041,7 @@ function normalizeComplexProduct(productName) {
 
 // ===== FUNCIÓN buildSearchPipeline COMPLETA Y MEJORADA =====
 
-function buildSearchPipelineWithLogs(parsedQuery, limit, offset) {
+function buildSearchPipeline(parsedQuery, limit, offset) {
   const pipeline = [];
   
   console.log('🔧 [PIPELINE] ===== INICIO CONSTRUCCIÓN PIPELINE =====');
