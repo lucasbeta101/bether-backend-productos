@@ -749,14 +749,41 @@ function formatearParaBusqueda(query) {
 
   return formatted;
 }
-// 🧠 PARSEAR CONSULTA NATURAL
+
 function parseNaturalQuery(query) {
   const normalized = normalizeText(query);
-  console.log('🔍 Parseando query:', normalized);
+  console.log('🔍 [BACKEND] Parseando query:', normalized);
 
-  // ✅ PATRONES DE BÚSQUEDA (manteniendo la lógica original)
-  const patterns = [
-    // "producto posicion para marca modelo"
+  // ✅ PATRONES COMPLEJOS PRIMERO (incluyendo año y versión)
+  const complexPatterns = [
+    // "amortiguador delantero para peugeot 205 1984 XS"
+    {
+      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+(delantero|trasero|del|pos|izq|der|superior|inferior)\s+para\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})\s+([a-z0-9]+)$/i,
+      extract: (match) => ({
+        product: match[1].trim(),
+        position: match[2].trim(),
+        brand: match[3].trim(),
+        model: match[4].trim(),
+        year: match[5].trim(),
+        version: match[6].trim(),
+        isStructured: true
+      })
+    },
+    
+    // "amortiguador para peugeot 205 1984 XS" (sin posición)
+    {
+      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+para\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})\s+([a-z0-9]+)$/i,
+      extract: (match) => ({
+        product: match[1].trim(),
+        brand: match[2].trim(),
+        model: match[3].trim(),
+        year: match[4].trim(),
+        version: match[5].trim(),
+        isStructured: true
+      })
+    },
+
+    // PATRONES ORIGINALES
     {
       pattern: /^(.+?)\s+(delantero|trasero|anterior|posterior|izquierdo|derecho|del|pos|izq|der|superior|inferior|sup|inf)\s+para\s+(.+?)\s+(.+?)(?:\s+(.+))?$/i,
       extract: (match) => ({
@@ -764,43 +791,44 @@ function parseNaturalQuery(query) {
         position: match[2].trim(),
         brand: match[3].trim(),
         model: match[4].trim(),
-        version: match[5]?.trim() || null
+        version: match[5]?.trim() || null,
+        isStructured: true
       })
     },
     
-    // "producto para marca modelo"
     {
       pattern: /^(.+?)\s+para\s+(.+?)\s+(.+?)(?:\s+(.+))?$/i,
       extract: (match) => ({
         product: match[1].trim(),
         brand: match[2].trim(),
         model: match[3].trim(),
-        version: match[4]?.trim() || null
+        version: match[4]?.trim() || null,
+        isStructured: true
       })
     },
     
-    // "marca modelo producto"
     {
       pattern: /^(ford|chevrolet|volkswagen|vw|peugeot|renault|fiat|toyota|nissan|honda|hyundai|kia|mazda|mitsubishi|bmw|audi|mercedes|citroen|opel|seat|volvo|subaru|suzuki)\s+([a-z0-9]+)\s+(.+)$/i,
       extract: (match) => ({
         brand: match[1].trim(),
         model: match[2].trim(),
-        product: match[3].trim()
+        product: match[3].trim(),
+        isStructured: true
       })
     }
   ];
 
-  // Intentar cada patrón
-  for (const pattern of patterns) {
+  // Probar patrones complejos primero
+  for (const pattern of complexPatterns) {
     const match = normalized.match(pattern.pattern);
     if (match) {
       const parsed = pattern.extract(match);
-      console.log('✅ Patrón encontrado:', parsed);
+      console.log('✅ [BACKEND] Patrón estructurado encontrado:', parsed);
       return parsed;
     }
   }
 
-  console.log('🔍 Búsqueda libre para:', normalized);
+  console.log('🔍 [BACKEND] Búsqueda libre para:', normalized);
   return { freeText: normalized };
 }
 
@@ -813,7 +841,7 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
   console.log('🔧 [PIPELINE] Construyendo para:', parsedQuery);
   
   if (parsedQuery.freeText) {
-    // ✅ BÚSQUEDA DE TEXTO LIBRE (actual)
+    // ✅ BÚSQUEDA DE TEXTO LIBRE
     const searchText = parsedQuery.freeText.trim();
     const escapedSearchText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     
@@ -821,7 +849,6 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     
     const searchConditions = [];
     
-    // Búsquedas básicas
     searchConditions.push(
       { codigo: { $regex: escapedSearchText, $options: 'i' } },
       { nombre: { $regex: escapedSearchText, $options: 'i' } },
@@ -832,8 +859,8 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     
     pipeline.push({ $match: { $or: searchConditions } });
     
-  } else {
-    // ✅ NUEVA LÓGICA: BÚSQUEDA ESTRUCTURADA
+  } else if (parsedQuery.isStructured) {
+    // ✅ BÚSQUEDA ESTRUCTURADA MEJORADA
     console.log('🔧 [PIPELINE] Búsqueda estructurada detectada');
     
     const matchConditions = {
@@ -847,6 +874,8 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
       
       if (validCategories.length > 0) {
         matchConditions.categoria = { $in: validCategories };
+      } else {
+        console.log('⚠️ [PIPELINE] No se encontraron categorías válidas para:', parsedQuery.product);
       }
     }
     
@@ -866,8 +895,11 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     // ✅ FILTRAR POR POSICIÓN
     if (parsedQuery.position) {
       console.log('🔧 [PIPELINE] Filtrando por posición:', parsedQuery.position);
+      const mappedPosition = mapPositionForSearch(parsedQuery.position);
+      console.log('🔧 [PIPELINE] Posición mapeada:', mappedPosition);
+      
       matchConditions["detalles_tecnicos.Posición de la pieza"] = { 
-        $regex: mapPositionForSearch(parsedQuery.position), 
+        $regex: mappedPosition, 
         $options: 'i' 
       };
     }
@@ -887,18 +919,40 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
       if (parsedQuery.year) {
         // Buscar el año en formato de 2 o 4 dígitos
         const year2digit = parsedQuery.year.slice(-2);
+        console.log('🔧 [PIPELINE] Buscando año 2 dígitos:', year2digit);
+        
+        // Buscar patrones como (84/..) o (1984/..)
         versionConditions.push({
           "aplicaciones.version": { $regex: `\\(${year2digit}/`, $options: 'i' }
+        });
+        
+        // También buscar el año completo
+        versionConditions.push({
+          "aplicaciones.version": { $regex: parsedQuery.year, $options: 'i' }
         });
       }
       
       if (versionConditions.length > 0) {
-        matchConditions.$or = versionConditions;
+        // Si ya hay otras condiciones, combinar con $and
+        if (matchConditions.$or) {
+          matchConditions.$and = [
+            { $or: matchConditions.$or },
+            { $or: versionConditions }
+          ];
+          delete matchConditions.$or;
+        } else {
+          matchConditions.$or = versionConditions;
+        }
       }
     }
     
     console.log('🔧 [PIPELINE] Condiciones finales:', JSON.stringify(matchConditions, null, 2));
     pipeline.push({ $match: matchConditions });
+    
+  } else {
+    // ✅ FALLBACK: buscar cualquier cosa
+    console.log('🔧 [PIPELINE] Búsqueda fallback');
+    pipeline.push({ $match: { tiene_precio_valido: true } });
   }
   
   // ✅ SCORING BÁSICO
