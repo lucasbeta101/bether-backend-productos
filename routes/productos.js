@@ -450,45 +450,164 @@ router.get('/busqueda', async (req, res) => {
     const collection = db.collection(COLLECTION_NAME);
 
     // ✅ PARSEAR QUERY CON PATRONES INTELIGENTES
+    console.log('🧠 [BACKEND] Iniciando parseNaturalQuery...');
     const parsedQuery = parseNaturalQuery(q.trim());
-    console.log('🧠 [BACKEND] Query parseada:', parsedQuery);
+    console.log('🧠 [BACKEND] Query parseada:', JSON.stringify(parsedQuery, null, 2));
+
+    // ✅ VERIFICAR SI ES BÚSQUEDA ESTRUCTURADA
+    if (parsedQuery.isStructured) {
+      console.log('🎯 [BACKEND] Búsqueda ESTRUCTURADA detectada');
+      console.log('📋 [BACKEND] Detalles:', {
+        product: parsedQuery.product,
+        position: parsedQuery.position,
+        model: parsedQuery.model,
+        brand: parsedQuery.brand,
+        year: parsedQuery.year,
+        searchType: parsedQuery.searchType
+      });
+    } else {
+      console.log('🔍 [BACKEND] Búsqueda LIBRE detectada');
+      console.log('📋 [BACKEND] Texto libre:', parsedQuery.freeText);
+    }
 
     // ✅ CONSTRUIR PIPELINE DE AGREGACIÓN
+    console.log('🔧 [BACKEND] Construyendo pipeline...');
     const pipeline = buildSearchPipeline(parsedQuery, parseInt(limit), parseInt(offset));
-    console.log('📋 [BACKEND] Pipeline construido:', JSON.stringify(pipeline, null, 2));
+    console.log('📋 [BACKEND] Pipeline construido con', pipeline.length, 'etapas');
+    console.log('📋 [BACKEND] Pipeline completo:', JSON.stringify(pipeline, null, 2));
+
+    // ✅ VERIFICAR CONEXIÓN Y COLECCIÓN
+    console.log('🔗 [BACKEND] Verificando conexión MongoDB...');
+    const collectionExists = await db.listCollections({ name: COLLECTION_NAME }).hasNext();
+    console.log('🔗 [BACKEND] Colección existe:', collectionExists);
+
+    if (!collectionExists) {
+      console.error('❌ [BACKEND] La colección no existe:', COLLECTION_NAME);
+      return res.status(500).json({
+        success: false,
+        error: `Colección ${COLLECTION_NAME} no encontrada`
+      });
+    }
+
+    // ✅ CONTAR DOCUMENTOS TOTAL PARA VERIFICAR
+    const totalDocs = await collection.countDocuments();
+    console.log('📊 [BACKEND] Total documentos en colección:', totalDocs);
+
+    if (totalDocs === 0) {
+      console.error('❌ [BACKEND] La colección está vacía');
+      return res.status(500).json({
+        success: false,
+        error: 'Base de datos vacía'
+      });
+    }
 
     // ✅ EJECUTAR BÚSQUEDA
+    console.log('🚀 [BACKEND] Ejecutando agregación...');
     const startTime = Date.now();
     const results = await collection.aggregate(pipeline).toArray();
     const processingTime = Date.now() - startTime;
 
-    console.log(`✅ [BACKEND] ${results.length} resultados encontrados en ${processingTime}ms`);
+    console.log(`📊 [BACKEND] Agregación completada: ${results.length} resultados en ${processingTime}ms`);
     
-    // ✅ DEBUG: Mostrar algunos resultados
+    // ✅ DEBUG DETALLADO DE RESULTADOS
     if (results.length > 0) {
-      console.log('📦 [BACKEND] Primeros 3 resultados:');
+      console.log('📦 [BACKEND] Primeros 3 resultados encontrados:');
       results.slice(0, 3).forEach((result, index) => {
-        console.log(`  ${index + 1}. ${result.codigo} - ${result.categoria} - ${result.nombre}`);
+        console.log(`  ${index + 1}. Código: ${result.codigo}`);
+        console.log(`     Nombre: ${result.nombre}`);
+        console.log(`     Categoría: ${result.categoria}`);
+        console.log(`     Aplicaciones: ${result.aplicaciones?.length || 0}`);
+        if (result.aplicaciones && result.aplicaciones.length > 0) {
+          const app = result.aplicaciones[0];
+          console.log(`     Primera aplicación: ${app.marca} ${app.modelo} ${app.version || 'N/A'}`);
+        }
+        console.log(`     Posición: ${result.detalles_tecnicos?.["Posición de la pieza"] || 'N/A'}`);
+        console.log('     ---');
       });
     } else {
-      console.log('❌ [BACKEND] No se encontraron resultados - revisando pipeline...');
+      console.log('❌ [BACKEND] No se encontraron resultados');
+      
+      // ✅ DEBUG ADICIONAL: Probar consultas más simples
+      console.log('🔍 [DEBUG] Probando consultas más simples...');
+      
+      // Test 1: Buscar por categoría solamente
+      if (parsedQuery.product) {
+        const validCategories = getValidCategoriesForProduct(parsedQuery.product);
+        console.log('🧪 [DEBUG] Categorías válidas:', validCategories);
+        
+        const categoryResults = await collection.find({
+          categoria: { $in: validCategories }
+        }).limit(3).toArray();
+        
+        console.log(`🧪 [DEBUG] Productos con esas categorías: ${categoryResults.length}`);
+        if (categoryResults.length > 0) {
+          console.log('🧪 [DEBUG] Ejemplo:', categoryResults[0].codigo, '-', categoryResults[0].categoria);
+        }
+      }
+      
+      // Test 2: Buscar por modelo solamente
+      if (parsedQuery.model) {
+        const modelResults = await collection.find({
+          'aplicaciones.modelo': { $regex: parsedQuery.model, $options: 'i' }
+        }).limit(3).toArray();
+        
+        console.log(`🧪 [DEBUG] Productos para modelo ${parsedQuery.model}: ${modelResults.length}`);
+        if (modelResults.length > 0) {
+          console.log('🧪 [DEBUG] Ejemplo:', modelResults[0].codigo, '-', modelResults[0].aplicaciones?.[0]?.modelo);
+        }
+      }
+      
+      // Test 3: Buscar por año solamente
+      if (parsedQuery.year) {
+        const year2digit = parsedQuery.year.slice(-2);
+        const yearResults = await collection.find({
+          'aplicaciones.version': { $regex: `\\(${year2digit}/`, $options: 'i' }
+        }).limit(3).toArray();
+        
+        console.log(`🧪 [DEBUG] Productos para año ${parsedQuery.year}: ${yearResults.length}`);
+        if (yearResults.length > 0) {
+          console.log('🧪 [DEBUG] Ejemplo:', yearResults[0].codigo, '-', yearResults[0].aplicaciones?.[0]?.version);
+        }
+      }
     }
 
-    res.json({
+    // ✅ RESPUESTA MEJORADA
+    const response = {
       success: true,
       query: q,
       parsedQuery: parsedQuery,
       results: results,
       totalResults: results.length,
       processingTime: processingTime,
+      debug: {
+        collectionName: COLLECTION_NAME,
+        totalDocuments: totalDocs,
+        pipelineStages: pipeline.length,
+        isStructuredSearch: !!parsedQuery.isStructured
+      },
       timestamp: new Date().toISOString()
+    };
+
+    // ✅ LOG FINAL
+    console.log('✅ [BACKEND] Respuesta enviada:', {
+      success: true,
+      totalResults: results.length,
+      processingTime: processingTime
     });
 
+    res.json(response);
+
   } catch (error) {
-    console.error('❌ [BÚSQUEDA BACKEND] Error:', error);
+    console.error('❌ [BÚSQUEDA BACKEND] Error completo:', error);
+    console.error('❌ [BÚSQUEDA BACKEND] Stack trace:', error.stack);
+    
     res.status(500).json({
       success: false,
-      error: error.message || 'Error en búsqueda'
+      error: error.message || 'Error en búsqueda',
+      debug: {
+        errorType: error.constructor.name,
+        timestamp: new Date().toISOString()
+      }
     });
   }
 });
@@ -1303,3 +1422,50 @@ function mapPositionForSearch(position) {
   const normalizedPosition = position.toLowerCase().trim();
   return positionMap[normalizedPosition] || position;
 }
+router.get('/test-parser', async (req, res) => {
+  const testQuery = 'amortiguador trasero corolla 2009';
+  const parsed = parseNaturalQuery(testQuery);
+  
+  console.log('🧪 [TEST PARSER]:', JSON.stringify(parsed, null, 2));
+  
+  res.json({
+    success: true,
+    query: testQuery,
+    parsed: parsed
+  });
+});
+
+// Test de categorías
+router.get('/test-categories', async (req, res) => {
+  const categories = getValidCategoriesForProduct('amortiguador');
+  
+  console.log('🧪 [TEST CATEGORIES]:', categories);
+  
+  res.json({
+    success: true,
+    product: 'amortiguador',
+    categories: categories
+  });
+});
+
+// Test de datos
+router.get('/test-data', async (req, res) => {
+  try {
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const totalCount = await collection.countDocuments();
+    const amortiguadorCount = await collection.countDocuments({
+      categoria: { $in: ['Amort CORVEN', 'Amort LIP', 'Amort SADAR'] }
+    });
+
+    res.json({
+      success: true,
+      totalProducts: totalCount,
+      amortiguadores: amortiguadorCount
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
