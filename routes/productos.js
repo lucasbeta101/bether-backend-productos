@@ -797,24 +797,36 @@ const STOP_WORDS = ['para', 'de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 
 
 // ✅ 2. LUEGO, REEMPLAZA TU FUNCIÓN parseNaturalQuery COMPLETA POR ESTA:
 function parseNaturalQuery(query) {
-  const normalized = normalizeText(query);
-  console.log('🧠 [PARSER INTELIGENTE] Parseando query:', normalized);
+  console.log('🧐 [Parser v4] Iniciando parseo para:', query);
+  const STOP_WORDS = ['para', 'de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'con', 'mi', 'auto'];
 
-  const words = normalized.split(' ').filter(word => !STOP_WORDS.includes(word) && word.length > 0);
-  console.log('🧠 [PARSER INTELIGENTE] Palabras clave filtradas:', words);
+  // --- Listas de keywords definidas localmente para evitar errores de scope ---
+  const productKeywords = [
+      'amortiguador', 'amortiguadores', 'pastilla', 'pastillas', 'freno', 'frenos', 'disco', 'discos', 'embrague', 'embragues',
+      'rotula', 'rotulas', 'rótula', 'rótulas', 'brazo', 'brazos', 'extremo', 'extremos', 'bieleta', 'bieletas', 'biela', 'bielas',
+      'axial', 'axiales', 'homocinetica', 'homocinéticas', 'homocinética', 'junta', 'juntas', 'rodamiento', 'rodamientos',
+      'ruleman', 'rulemanes', 'maza', 'mazas', 'semieje', 'semiejes', 'soporte', 'soportes', 'parrilla', 'parrillas',
+      'cazoleta', 'cazoletas', 'barra', 'barras', 'caja', 'cajas', 'bomba', 'bombas', 'suspension', 'suspensión', 'clutch', 'campana'
+  ];
+  const positionKeywords = [
+      'delantero', 'delanteros', 'del', 'anterior', 'frontal', 'delantera', 'delanteras', 'trasero', 'traseros', 'pos',
+      'posterior', 'trasera', 'traseras', 'izquierdo', 'izquierda', 'izq', 'derecho', 'derecha', 'der', 'superior', 'sup',
+      'inferior', 'inf', 'ambos_lados', 'bilateral'
+  ];
+  // --- Fin de listas locales ---
+
+  const normalized = normalizeText(query);
+  const words = normalized.split(' ').filter(word => !STOP_WORDS.includes(word) && word.length > 1);
+  console.log('🧐 [Parser v4] Palabras clave:', words);
 
   const result = {
     product: null,
     position: null,
     year: null,
-    vehicleTerms: [], // Para marca, modelo, versión, etc.
+    vehicleTerms: [],
     isStructured: false
   };
 
-  const productKeywords = Object.keys(getValidCategoriesForProduct('all')); // Obtener todas las keywords de productos
-  const positionKeywords = Object.keys(mapPositionForSearch('all')); // Obtener todas las keywords de posición
-
-  // Identificar componentes sin importar el orden
   const remainingWords = [];
   for (const word of words) {
     if (!result.product && productKeywords.includes(word)) {
@@ -824,7 +836,6 @@ function parseNaturalQuery(query) {
     } else if (!result.year && /^\d{4}$/.test(word)) {
       result.year = word;
     } else if (!result.year && /^\d{2}$/.test(word)) {
-      // Convertir año de 2 dígitos a 4
       const yearNum = parseInt(word, 10);
       result.year = yearNum > 30 ? (1900 + yearNum).toString() : (2000 + yearNum).toString();
     } else {
@@ -833,16 +844,12 @@ function parseNaturalQuery(query) {
   }
 
   result.vehicleTerms = remainingWords;
-
-  // Se considera estructurada si encontró al menos un componente clave
   if (result.product || result.position || result.year || result.vehicleTerms.length > 0) {
     result.isStructured = true;
-    console.log('🎯 [PARSER INTELIGENTE] Búsqueda ESTRUCTURADA detectada:', result);
-    return result;
   }
-
-  console.log('🔍 [PARSER INTELIGENTE] Usando búsqueda LIBRE para:', normalized);
-  return { freeText: normalized };
+  
+  console.log('🧐 [Parser v4] Resultado del parseo:', result);
+  return result;
 }
 
 // ✅ 3. TAMBIÉN NECESITAS MODIFICAR ESTAS DOS FUNCIONES HELPER PARA QUE DEVUELVAN TODAS LAS KEYS
@@ -993,91 +1000,80 @@ function normalizeComplexProduct(productName) {
 
 function buildSearchPipeline(parsedQuery, limit, offset) {
   const pipeline = [];
-  const matchConditions = { tiene_precio_valido: true };
+  let matchConditions = { tiene_precio_valido: true };
 
-  console.log('🔧 [PIPELINE v3] ===== INICIO CONSTRUCCIÓN CON ELEMMATCH =====');
-  console.log('🔧 [PIPELINE v3] Query parseada:', parsedQuery);
+  console.log('🛠️ [Pipeline Debug] ===== INICIANDO CONSTRUCCIÓN DE PIPELINE =====');
+  console.log('🛠️ [Pipeline Debug] Query Parseada Recibida:', JSON.stringify(parsedQuery, null, 2));
 
   if (parsedQuery.isStructured) {
-    console.log('🎯 [PIPELINE v3] Construyendo desde búsqueda ESTRUCTURADA');
+    console.log('🎯 [Pipeline Debug] Modo: Búsqueda Estructurada');
 
-    // --- FILTRO DE PRODUCTO/CATEGORÍA (sin cambios) ---
     if (parsedQuery.product) {
       const validCategories = getValidCategoriesForProduct(parsedQuery.product);
       if (validCategories.length > 0) {
         matchConditions.categoria = { $in: validCategories };
-        console.log('✅ [PIPELINE v3] Condición de categoría agregada');
+        console.log('🛠️ [Pipeline Debug] Condición de CATEGORÍA:', JSON.stringify(matchConditions.categoria));
       }
     }
 
-    // --- FILTRO DE POSICIÓN (sin cambios) ---
     if (parsedQuery.position) {
       const mappedPosition = mapPositionForSearch(parsedQuery.position);
-      matchConditions["detalles_tecnicos.Posición de la pieza"] = {
-        $regex: mappedPosition,
-        $options: 'i'
-      };
-      console.log('✅ [PIPELINE v3] Condición de posición agregada');
+      matchConditions["detalles_tecnicos.Posición de la pieza"] = { $regex: mappedPosition, $options: 'i' };
+      console.log('🛠️ [Pipeline Debug] Condición de POSICIÓN:', JSON.stringify(matchConditions["detalles_tecnicos.Posición de la pieza"]));
     }
+    
+    const elemMatchAndConditions = [];
 
-    // --- FILTRO DE VEHÍCULO Y AÑO (LÓGICA CORREGIDA) ---
-    const elemMatchConditions = { $and: [] };
-
-    // 1. Añadir condiciones para cada término del vehículo
-    if (parsedQuery.vehicleTerms.length > 0) {
+    if (parsedQuery.vehicleTerms && parsedQuery.vehicleTerms.length > 0) {
       const vehicleConditions = parsedQuery.vehicleTerms.map(term => ({
         $or: [
           { "marca": { $regex: term, $options: 'i' } },
           { "modelo": { $regex: term, $options: 'i' } }
         ]
       }));
-      elemMatchConditions.$and.push(...vehicleConditions);
-      console.log(`✅ [PIPELINE v3] ${vehicleConditions.length} condiciones de vehículo para $elemMatch`);
+      elemMatchAndConditions.push(...vehicleConditions);
+      console.log('🛠️ [Pipeline Debug] Condiciones de VEHÍCULO para $elemMatch:', JSON.stringify(vehicleConditions));
     }
 
-    // 2. Añadir condición de año
     if (parsedQuery.year) {
-      // Usamos una regex que busca el año completo (1988) o los dos últimos dígitos (88)
-      // para mayor compatibilidad con tu data.
       const yearRegex = `(${parsedQuery.year}|${parsedQuery.year.slice(-2)})`;
       const yearCondition = { 'version': { $regex: yearRegex, $options: 'i' } };
-      elemMatchConditions.$and.push(yearCondition);
-      console.log('✅ [PIPELINE v3] Condición de año agregada a $elemMatch');
+      elemMatchAndConditions.push(yearCondition);
+      console.log('🛠️ [Pipeline Debug] Condición de AÑO para $elemMatch:', JSON.stringify(yearCondition));
     }
 
-    // 3. Aplicar $elemMatch solo si contiene condiciones
-    if (elemMatchConditions.$and.length > 0) {
-      matchConditions.aplicaciones = { $elemMatch: elemMatchConditions };
-      console.log('✅ [PIPELINE v3] Condición $elemMatch final construida');
+    if (elemMatchAndConditions.length > 0) {
+      matchConditions.aplicaciones = { $elemMatch: { $and: elemMatchAndConditions } };
+      console.log('🛠️ [Pipeline Debug] Condición $elemMatch COMPLETA:', JSON.stringify(matchConditions.aplicaciones));
     }
     
-    pipeline.push({ $match: matchConditions });
-
-  } else if (parsedQuery.freeText) {
-    // La búsqueda libre mejorada que te di antes sigue siendo válida
-    console.log('📝 [PIPELINE v3] Construyendo desde búsqueda LIBRE');
+  } else {
+    console.log('📝 [Pipeline Debug] Modo: Búsqueda de Texto Libre');
+    // Lógica de fallback para texto libre
     const keywords = parsedQuery.freeText.split(' ').filter(k => k.length > 0);
     const keywordConditions = keywords.map(word => ({
         $or: [
-            { codigo: { $regex: word, $options: 'i' } },
             { nombre: { $regex: word, $options: 'i' } },
-            { categoria: { $regex: word, $options: 'i' } },
             { "aplicaciones.marca": { $regex: word, $options: 'i' } },
             { "aplicaciones.modelo": { $regex: word, $options: 'i' } },
         ]
     }));
-    if(keywordConditions.length > 0) {
-        pipeline.push({ $match: { $and: keywordConditions } });
+    if (keywordConditions.length > 0) {
+        matchConditions = { ...matchConditions, $and: keywordConditions };
     }
   }
 
-  // --- RESTO DEL PIPELINE (SORT, LIMIT, ETC.) ---
+  console.log('🚨 [Pipeline Debug] ===== CONSULTA FINAL DE MONGODB ($match) =====');
+  console.log(JSON.stringify(matchConditions, null, 2));
+  console.log('🚨 ==========================================================');
+
+  pipeline.push({ $match: matchConditions });
+
+  // Resto del pipeline
   pipeline.push({ $sort: { codigo: 1 } });
-  if (offset > 0) pipeline.push({ $skip: offset });
   pipeline.push({ $limit: limit });
   pipeline.push({ $project: { _id: 0 } });
 
-  console.log('🏗️ [PIPELINE v3] Pipeline final:', JSON.stringify(pipeline, null, 2));
   return pipeline;
 }
 
