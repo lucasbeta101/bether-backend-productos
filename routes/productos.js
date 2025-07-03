@@ -797,6 +797,7 @@ function parseNaturalQuery(query) {
 
 
 // 🏗 CONSTRUIR PIPELINE DE BÚSQUEDA MEJORADO - CORREGIDO
+// 🏗 CONSTRUIR PIPELINE DE BÚSQUEDA - REGEX SEGURO
 function buildSearchPipeline(parsedQuery, limit, offset) {
   const pipeline = [];
   
@@ -804,12 +805,32 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     const formatted = formatearParaBusqueda(parsedQuery.freeText);
     const searchText = parsedQuery.freeText.trim();
     
+    // ✅ ESCAPAR CARACTERES ESPECIALES PARA REGEX
+    const escapedSearchText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    console.log('🎯 [FORMATO] Query original:', searchText);
+    console.log('🎯 [FORMATO] Query escapada:', escapedSearchText);
     console.log('🎯 [FORMATO] Query formateada:', formatted);
     
-    // ✅ ESTRATEGIA: USAR $OR CON MÚLTIPLES $MATCH EN LUGAR DE UNO GRANDE
     const searchConditions = [];
     
-    // 1. BÚSQUEDA CON ÍNDICE COMPUESTO (máxima prioridad)
+    // 1. BÚSQUEDA EXACTA POR CÓDIGO (sin regex)
+    searchConditions.push({ codigo: searchText });
+    
+    // 2. BÚSQUEDA POR CÓDIGO CON REGEX SEGURO
+    if (searchText.length > 2) {
+      searchConditions.push({ codigo: { $regex: escapedSearchText, $options: 'i' } });
+    }
+    
+    // 3. EQUIVALENCIAS EXACTAS
+    searchConditions.push({ "equivalencias.codigo": searchText });
+    
+    // 4. EQUIVALENCIAS CON REGEX SEGURO
+    if (searchText.length > 2) {
+      searchConditions.push({ "equivalencias.codigo": { $regex: escapedSearchText, $options: 'i' } });
+    }
+    
+    // 5. BÚSQUEDA CON ÍNDICE COMPUESTO (si tenemos datos formateados)
     if (formatted.categoria && formatted.posicion && formatted.marca && formatted.modelo) {
       const compoundMatch = {
         categoria: formatted.categoria,
@@ -817,34 +838,33 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
         "aplicaciones.marca": formatted.marca,
         "aplicaciones.modelo": formatted.modelo
       };
-      if (formatted.version) {
-        compoundMatch["aplicaciones.version"] = { $regex: formatted.version, $options: 'i' };
-      }
       searchConditions.push(compoundMatch);
     }
     
-    // 2. BÚSQUEDAS SIMPLES CON ÍNDICES EXISTENTES
-    searchConditions.push(
-      // Código exacto (usa índice codigo_1)
-      { codigo: searchText },
-      { codigo: { $regex: `^${searchText}`, $options: 'i' } },
-      
-      // Equivalencias (usa índice idx_equivalencias_codigo)
-      { "equivalencias.codigo": searchText },
-      { "equivalencias.codigo": { $regex: searchText, $options: 'i' } },
-      
-      // Aplicaciones (usa índices de aplicaciones)
-      { "aplicaciones.marca": { $regex: searchText, $options: 'i' } },
-      { "aplicaciones.modelo": { $regex: searchText, $options: 'i' } },
-      
-      // Categoría (usa idx_categoria)
-      { categoria: { $regex: searchText, $options: 'i' } }
-    );
-    
-    // 3. BÚSQUEDA EN NOMBRE (sin $text por ahora)
-    if (searchText.length > 2) {
-      searchConditions.push({ nombre: { $regex: searchText, $options: 'i' } });
+    // 6. BÚSQUEDAS INDIVIDUALES CON REGEX SEGURO
+    if (escapedSearchText.length > 2) {
+      searchConditions.push(
+        { nombre: { $regex: escapedSearchText, $options: 'i' } },
+        { categoria: { $regex: escapedSearchText, $options: 'i' } },
+        { "aplicaciones.marca": { $regex: escapedSearchText, $options: 'i' } },
+        { "aplicaciones.modelo": { $regex: escapedSearchText, $options: 'i' } }
+      );
     }
+    
+    // 7. BÚSQUEDAS POR TÉRMINOS INDIVIDUALES
+    const terms = searchText.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+    terms.forEach(term => {
+      const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      
+      searchConditions.push(
+        { codigo: { $regex: escapedTerm, $options: 'i' } },
+        { nombre: { $regex: escapedTerm, $options: 'i' } },
+        { categoria: { $regex: escapedTerm, $options: 'i' } },
+        { "aplicaciones.marca": { $regex: escapedTerm, $options: 'i' } },
+        { "aplicaciones.modelo": { $regex: escapedTerm, $options: 'i' } },
+        { "equivalencias.codigo": { $regex: escapedTerm, $options: 'i' } }
+      );
+    });
     
     pipeline.push({ $match: { $or: searchConditions } });
     
@@ -853,18 +873,21 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     const conditions = [];
     
     if (parsedQuery.product) {
+      const escapedProduct = parsedQuery.product.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       conditions.push({
         $or: [
-          { categoria: { $regex: parsedQuery.product, $options: 'i' } },
-          { nombre: { $regex: parsedQuery.product, $options: 'i' } }
+          { categoria: { $regex: escapedProduct, $options: 'i' } },
+          { nombre: { $regex: escapedProduct, $options: 'i' } }
         ]
       });
     }
     
     if (parsedQuery.brand && parsedQuery.model) {
+      const escapedBrand = parsedQuery.brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escapedModel = parsedQuery.model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       conditions.push({
-        "aplicaciones.marca": { $regex: parsedQuery.brand, $options: 'i' },
-        "aplicaciones.modelo": { $regex: parsedQuery.model, $options: 'i' }
+        "aplicaciones.marca": { $regex: escapedBrand, $options: 'i' },
+        "aplicaciones.modelo": { $regex: escapedModel, $options: 'i' }
       });
     }
     
@@ -873,7 +896,7 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     });
   }
   
-  // ✅ SCORING SIMPLIFICADO
+  // ✅ SCORING MEJORADO
   pipeline.push({
     $addFields: {
       relevanceScore: {
@@ -884,16 +907,61 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
           // Equivalencia exacta = 900
           { $cond: [{ $in: [parsedQuery.freeText || "", "$equivalencias.codigo"] }, 900, 0] },
           
+          // Código contiene (para códigos como 0714FN-K) = 800
+          { $cond: [
+            { $regexMatch: { 
+              input: "$codigo", 
+              regex: (parsedQuery.freeText || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 
+              options: "i" 
+            }},
+            800, 0
+          ]},
+          
           // Nombre contiene = 300
           { $cond: [
-            { $regexMatch: { input: "$nombre", regex: parsedQuery.freeText || "", options: "i" } },
+            { $regexMatch: { 
+              input: "$nombre", 
+              regex: (parsedQuery.freeText || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 
+              options: "i" 
+            }},
             300, 0
           ]},
           
           // Categoría = 200
           { $cond: [
-            { $regexMatch: { input: "$categoria", regex: parsedQuery.freeText || "", options: "i" } },
+            { $regexMatch: { 
+              input: "$categoria", 
+              regex: (parsedQuery.freeText || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 
+              options: "i" 
+            }},
             200, 0
+          ]},
+          
+          // Aplicación marca/modelo = 400
+          { $cond: [
+            { $gt: [
+              { $size: {
+                $filter: {
+                  input: "$aplicaciones",
+                  cond: {
+                    $or: [
+                      { $regexMatch: { 
+                        input: "$$this.marca", 
+                        regex: (parsedQuery.freeText || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 
+                        options: "i" 
+                      }},
+                      { $regexMatch: { 
+                        input: "$$this.modelo", 
+                        regex: (parsedQuery.freeText || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 
+                        options: "i" 
+                      }}
+                    ]
+                  }
+                }
+              }},
+              0
+            ]},
+            400, 0
           ]}
         ]
       }
