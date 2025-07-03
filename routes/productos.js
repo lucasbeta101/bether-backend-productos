@@ -1120,28 +1120,136 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
       console.log('🚗 [PIPELINE] Condición de vehículo creada:', JSON.stringify(vehicleCondition, null, 2));
       
       // 3. AGREGAR AÑO SI EXISTE
-      if (parsedQuery.year) {
-        console.log('📅 [PIPELINE] ===== PROCESANDO AÑO =====');
-        console.log('📅 [PIPELINE] Año completo:', parsedQuery.year);
+      if (parsedQuery.year && vehicleCondition) {
+        console.log('🔧 [PIPELINE] Agregando filtro de AÑO:', parsedQuery.year);
         
+        const targetYear = parseInt(parsedQuery.year);
         const year2digit = parsedQuery.year.slice(-2);
-        console.log('📅 [PIPELINE] Año 2 dígitos:', year2digit);
+        console.log('🔧 [PIPELINE] Año objetivo:', targetYear);
+        console.log('🔧 [PIPELINE] Año 2 dígitos:', year2digit);
         
-        const yearPatterns = [
-          `\\(${year2digit}/`,           // (09/..
-          `\\(${parsedQuery.year}`,      // (2009
-          year2digit,                    // solo 09
-          parsedQuery.year               // solo 2009
-        ];
+        // ✅ NUEVA LÓGICA: Buscar años que INCLUYAN el año objetivo
+        const yearPatterns = [];
         
-        console.log('📅 [PIPELINE] Patrones de año:', yearPatterns);
+        // 1. Patrones de rango abierto que incluyan el año
+        // (08/..) incluye 2009, (07/..) incluye 2009, etc.
+        for (let startYear = Math.max(0, parseInt(year2digit) - 5); startYear <= parseInt(year2digit); startYear++) {
+          const startYear2digit = startYear.toString().padStart(2, '0');
+          yearPatterns.push(`\\(${startYear2digit}/\\.\\.\)`); // (08/..), (07/..), etc.
+        }
         
+        // 2. Año específico en diferentes formatos
+        yearPatterns.push(`\\(${year2digit}\\)`);      // (09)
+        yearPatterns.push(`\\(${parsedQuery.year}\\)`); // (2009)
+        yearPatterns.push(`${year2digit}`);             // solo 09
+        yearPatterns.push(`${parsedQuery.year}`);       // solo 2009
+        
+        // 3. Rangos cerrados que incluyan el año (ej: 07/12 incluye 09)
+        yearPatterns.push(`\\([0-${year2digit[0]}][0-${year2digit[1]}]/[${year2digit[0]}-9][${year2digit[1]}-9]\\)`);
+        
+        console.log('📅 [PIPELINE] Patrones de año generados:', yearPatterns);
+        
+        // Agregar condiciones de año al $elemMatch existente
         vehicleCondition.$elemMatch.$or = yearPatterns.map(pattern => ({
           version: { $regex: pattern, $options: 'i' }
         }));
         
-        console.log('📅 [PIPELINE] Condición con año agregada:', JSON.stringify(vehicleCondition, null, 2));
+        console.log('📅 [PIPELINE] Condición con año corregida:', JSON.stringify(vehicleCondition, null, 2));
       }
+      
+      // ===== FUNCIÓN AUXILIAR PARA VERIFICAR SI UN AÑO ESTÁ EN RANGO =====
+      
+      function checkYearInRange(versionString, targetYear) {
+        console.log('📅 [YEAR CHECK] Verificando:', versionString, 'para año', targetYear);
+        
+        // Patrón (08/..) = desde 2008 hasta infinito
+        const openRangeMatch = versionString.match(/\((\d{2})\/\.\.\)/);
+        if (openRangeMatch) {
+          const startYear = parseInt('20' + openRangeMatch[1]);
+          const isInRange = targetYear >= startYear;
+          console.log('📅 [YEAR CHECK] Rango abierto:', startYear, '<=', targetYear, '=', isInRange);
+          return isInRange;
+        }
+        
+        // Patrón (07/12) = desde 2007 hasta 2012  
+        const closedRangeMatch = versionString.match(/\((\d{2})\/(\d{2})\)/);
+        if (closedRangeMatch) {
+          const startYear = parseInt('20' + closedRangeMatch[1]);
+          const endYear = parseInt('20' + closedRangeMatch[2]);
+          const isInRange = targetYear >= startYear && targetYear <= endYear;
+          console.log('📅 [YEAR CHECK] Rango cerrado:', startYear, '<=', targetYear, '<=', endYear, '=', isInRange);
+          return isInRange;
+        }
+        
+        // Año específico
+        const specificYearMatch = versionString.match(/(\d{4})/);
+        if (specificYearMatch) {
+          const versionYear = parseInt(specificYearMatch[1]);
+          const isMatch = targetYear === versionYear;
+          console.log('📅 [YEAR CHECK] Año específico:', versionYear, '=', targetYear, '=', isMatch);
+          return isMatch;
+        }
+        
+        console.log('📅 [YEAR CHECK] No se pudo parsear:', versionString);
+        return false;
+      }
+      
+      // ===== RUTA DE TEST PARA VERIFICAR LÓGICA DE AÑOS =====
+      
+      router.get('/test-year-logic', async (req, res) => {
+        try {
+          console.log('🧪 [TEST YEAR] Iniciando test de lógica de años...');
+          
+          const testCases = [
+            { version: "(08/..)", targetYear: 2009, expected: true },
+            { version: "(08/..)", targetYear: 2007, expected: false },
+            { version: "(08/..)", targetYear: 2015, expected: true },
+            { version: "(07/12)", targetYear: 2009, expected: true },
+            { version: "(07/12)", targetYear: 2006, expected: false },
+            { version: "(07/12)", targetYear: 2013, expected: false },
+            { version: "(09)", targetYear: 2009, expected: true },
+            { version: "(09)", targetYear: 2008, expected: false }
+          ];
+          
+          const results = testCases.map(testCase => {
+            const result = checkYearInRange(testCase.version, testCase.targetYear);
+            const passed = result === testCase.expected;
+            
+            console.log(`🧪 [TEST YEAR] ${testCase.version} para ${testCase.targetYear}: ${result} (esperado: ${testCase.expected}) - ${passed ? 'PASS' : 'FAIL'}`);
+            
+            return {
+              version: testCase.version,
+              targetYear: testCase.targetYear,
+              result: result,
+              expected: testCase.expected,
+              passed: passed
+            };
+          });
+          
+          // Test específico con tu producto
+          const yourProductTest = checkYearInRange("(08/..)", 2009);
+          console.log('🎯 [TEST YEAR] Tu producto (08/..) para 2009:', yourProductTest);
+          
+          res.json({
+            success: true,
+            message: 'Test de lógica de años completado',
+            testResults: results,
+            yourProductTest: {
+              version: "(08/..)",
+              targetYear: 2009,
+              result: yourProductTest,
+              shouldMatch: true
+            }
+          });
+          
+        } catch (error) {
+          console.error('❌ [TEST YEAR] Error:', error);
+          res.status(500).json({
+            success: false,
+            error: error.message
+          });
+        }
+      });
       
       matchConditions.aplicaciones = vehicleCondition;
       console.log('✅ [PIPELINE] Condición de aplicaciones agregada al match');
