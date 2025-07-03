@@ -948,91 +948,27 @@ const PRODUCT_CATEGORIES = {
   'rotula': ['Rotulas CORVEN', 'Rotulas SADAR'],
   'rotulas': ['Rotulas CORVEN', 'Rotulas SADAR']
 };
-function buildUltraSpecificPipeline(parsedQuery, limit, offset) {
-  const pipeline = [];
 
-  // ✅ 1. FILTRO ULTRA-ESPECÍFICO
-  const matchConditions = {
-    tiene_precio_valido: true
+function getValidCategories(product) {
+  const categoryMap = {
+    'amortiguador': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
+    'pastilla': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+    'disco': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
+    'cazoleta': ['Cazoletas CORVEN', 'Cazoletas SADAR'],
+    'bieleta': ['Bieletas CORVEN', 'Bieletas SADAR'],
+    'rotula': ['Rotulas CORVEN', 'Rotulas SADAR']
   };
+  
+  return categoryMap[product] || [];
+}
 
-  // Categoría específica
-  if (parsedQuery.product) {
-    const validCategories = getValidCategories(parsedQuery.product);
-    matchConditions.categoria = { $in: validCategories };
-  }
-
-  // Posición específica
-  if (parsedQuery.position) {
-    matchConditions["detalles_tecnicos.Posición de la pieza"] = {
-      $regex: mapPosition(parsedQuery.position), $options: 'i'
-    };
-  }
-
-  // Vehículo específico
-  if (parsedQuery.brand && parsedQuery.model) {
-    matchConditions.$and = [
-      { "aplicaciones.marca": { $regex: parsedQuery.brand, $options: 'i' } },
-      { "aplicaciones.modelo": { $regex: parsedQuery.model, $options: 'i' } }
-    ];
-  }
-
-  // Versión específica (si existe)
-  if (parsedQuery.version) {
-    matchConditions["aplicaciones.version"] = {
-      $regex: parsedQuery.version, $options: 'i'
-    };
-  }
-
-  pipeline.push({ $match: matchConditions });
-
-  // ✅ 2. SCORING ULTRA-ESPECÍFICO
-  pipeline.push({
-    $addFields: {
-      ultraSpecificScore: {
-        $add: [
-          // Producto correcto = 10000
-          { $cond: [{ $in: ["$categoria", validCategories] }, 10000, 0] },
-          
-          // Posición correcta = 5000
-          { $cond: [
-            { $regexMatch: { 
-              input: "$detalles_tecnicos.Posición de la pieza", 
-              regex: mapPosition(parsedQuery.position), 
-              options: "i" 
-            }}, 5000, 0
-          ]},
-          
-          // Vehículo específico = 3000
-          { $cond: [
-            { $and: [
-              { $anyElementTrue: { $map: { 
-                input: "$aplicaciones", 
-                in: { $regexMatch: { input: "$$this.marca", regex: parsedQuery.brand, options: "i" } }
-              }}},
-              { $anyElementTrue: { $map: { 
-                input: "$aplicaciones", 
-                in: { $regexMatch: { input: "$$this.modelo", regex: parsedQuery.model, options: "i" } }
-              }}}
-            ]}, 3000, 0
-          ]},
-          
-          // Versión específica = 8000
-          { $cond: [
-            { $anyElementTrue: { $map: { 
-              input: "$aplicaciones", 
-              in: { $regexMatch: { input: "$$this.version", regex: parsedQuery.version, options: "i" } }
-            }}}, 8000, 0
-          ]}
-        ]
-      }
-    }
-  });
-
-  // ✅ 3. ORDENAR POR SCORE ULTRA-ESPECÍFICO
-  pipeline.push({ $sort: { ultraSpecificScore: -1, codigo: 1 } });
-  if (offset > 0) pipeline.push({ $skip: offset });
-  pipeline.push({ $limit: limit });
-
-  return pipeline;
+function mapPosition(position) {
+  const positionMap = {
+    'delantero': 'Delantero',
+    'del': 'Delantero', 
+    'trasero': 'Trasero',
+    'pos': 'Trasero'
+  };
+  
+  return positionMap[position] || position;
 }
