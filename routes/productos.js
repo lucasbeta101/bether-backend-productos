@@ -995,62 +995,67 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
   const pipeline = [];
   const matchConditions = { tiene_precio_valido: true };
 
-  console.log('🔧 [PIPELINE INTELIGENTE] ===== INICIO CONSTRUCCIÓN =====');
-  console.log('🔧 [PIPELINE INTELIGENTE] Query parseada:', parsedQuery);
+  console.log('🔧 [PIPELINE v3] ===== INICIO CONSTRUCCIÓN CON ELEMMATCH =====');
+  console.log('🔧 [PIPELINE v3] Query parseada:', parsedQuery);
 
   if (parsedQuery.isStructured) {
-    console.log('🎯 [PIPELINE INTELIGENTE] Construyendo desde búsqueda ESTRUCTURADA');
+    console.log('🎯 [PIPELINE v3] Construyendo desde búsqueda ESTRUCTURADA');
 
-    // 1. FILTRAR POR PRODUCTO/CATEGORÍA
+    // --- FILTRO DE PRODUCTO/CATEGORÍA (sin cambios) ---
     if (parsedQuery.product) {
       const validCategories = getValidCategoriesForProduct(parsedQuery.product);
       if (validCategories.length > 0) {
         matchConditions.categoria = { $in: validCategories };
-        console.log('✅ [PIPELINE] Condición de categoría agregada:', matchConditions.categoria);
+        console.log('✅ [PIPELINE v3] Condición de categoría agregada');
       }
     }
 
-    // 2. FILTRAR POR POSICIÓN
+    // --- FILTRO DE POSICIÓN (sin cambios) ---
     if (parsedQuery.position) {
       const mappedPosition = mapPositionForSearch(parsedQuery.position);
       matchConditions["detalles_tecnicos.Posición de la pieza"] = {
         $regex: mappedPosition,
         $options: 'i'
       };
-      console.log('✅ [PIPELINE] Condición de posición agregada:', mappedPosition);
+      console.log('✅ [PIPELINE v3] Condición de posición agregada');
     }
 
-    // 3. FILTRAR POR TÉRMINOS DEL VEHÍCULO (MARCA, MODELO, ETC.)
+    // --- FILTRO DE VEHÍCULO Y AÑO (LÓGICA CORREGIDA) ---
+    const elemMatchConditions = { $and: [] };
+
+    // 1. Añadir condiciones para cada término del vehículo
     if (parsedQuery.vehicleTerms.length > 0) {
-      // Se crea una condición $and para que el producto deba cumplir con TODOS los términos del vehículo
       const vehicleConditions = parsedQuery.vehicleTerms.map(term => ({
         $or: [
-          { "aplicaciones.marca": { $regex: term, $options: 'i' } },
-          { "aplicaciones.modelo": { $regex: term, $options: 'i' } },
-          { "aplicaciones.version": { $regex: term, $options: 'i' } }
+          { "marca": { $regex: term, $options: 'i' } },
+          { "modelo": { $regex: term, $options: 'i' } }
         ]
       }));
-      matchConditions.$and = (matchConditions.$and || []).concat(vehicleConditions);
-      console.log(`✅ [PIPELINE] ${parsedQuery.vehicleTerms.length} condiciones de vehículo agregadas`);
+      elemMatchConditions.$and.push(...vehicleConditions);
+      console.log(`✅ [PIPELINE v3] ${vehicleConditions.length} condiciones de vehículo para $elemMatch`);
     }
 
-    // 4. FILTRAR POR AÑO (USANDO LA LÓGICA DE RANGOS QUE YA TENÍAS)
+    // 2. Añadir condición de año
     if (parsedQuery.year) {
-        // (Aquí puedes integrar tu lógica de búsqueda de año bidireccional existente,
-        // ya que ahora tienes el año aislado y listo para usar)
-        const targetYear = parseInt(parsedQuery.year);
-        // Ejemplo simple:
-        const yearRegex = `(${parsedQuery.year}|${parsedQuery.year.slice(-2)})`;
-         if (!matchConditions.$and) matchConditions.$and = [];
-        matchConditions.$and.push({ 'aplicaciones.version': { $regex: yearRegex, $options: 'i' } });
-        console.log('✅ [PIPELINE] Condición de año agregada:', yearRegex);
+      // Usamos una regex que busca el año completo (1988) o los dos últimos dígitos (88)
+      // para mayor compatibilidad con tu data.
+      const yearRegex = `(${parsedQuery.year}|${parsedQuery.year.slice(-2)})`;
+      const yearCondition = { 'version': { $regex: yearRegex, $options: 'i' } };
+      elemMatchConditions.$and.push(yearCondition);
+      console.log('✅ [PIPELINE v3] Condición de año agregada a $elemMatch');
+    }
+
+    // 3. Aplicar $elemMatch solo si contiene condiciones
+    if (elemMatchConditions.$and.length > 0) {
+      matchConditions.aplicaciones = { $elemMatch: elemMatchConditions };
+      console.log('✅ [PIPELINE v3] Condición $elemMatch final construida');
     }
     
     pipeline.push({ $match: matchConditions });
 
   } else if (parsedQuery.freeText) {
-    // Búsqueda de texto libre mejorada (opcional, pero recomendada)
-    console.log('📝 [PIPELINE INTELIGENTE] Construyendo desde búsqueda LIBRE');
+    // La búsqueda libre mejorada que te di antes sigue siendo válida
+    console.log('📝 [PIPELINE v3] Construyendo desde búsqueda LIBRE');
     const keywords = parsedQuery.freeText.split(' ').filter(k => k.length > 0);
     const keywordConditions = keywords.map(word => ({
         $or: [
@@ -1066,13 +1071,13 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     }
   }
 
-  // El resto de tu pipeline (scoring, sort, limit) puede permanecer igual
-  pipeline.push({ $sort: { codigo: 1 } }); // Un orden simple como ejemplo
+  // --- RESTO DEL PIPELINE (SORT, LIMIT, ETC.) ---
+  pipeline.push({ $sort: { codigo: 1 } });
   if (offset > 0) pipeline.push({ $skip: offset });
   pipeline.push({ $limit: limit });
   pipeline.push({ $project: { _id: 0 } });
 
-  console.log('🏗️ [PIPELINE INTELIGENTE] Pipeline final:', JSON.stringify(pipeline, null, 2));
+  console.log('🏗️ [PIPELINE v3] Pipeline final:', JSON.stringify(pipeline, null, 2));
   return pipeline;
 }
 
