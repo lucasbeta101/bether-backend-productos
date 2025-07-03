@@ -1128,72 +1128,102 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
         console.log('🔧 [PIPELINE] Año objetivo:', targetYear);
         console.log('🔧 [PIPELINE] Año 2 dígitos:', year2digit);
         
-        // ✅ NUEVA LÓGICA SIMPLIFICADA Y CORREGIDA
+        // ✅ NUEVA LÓGICA: Buscar años que INCLUYAN el año objetivo - CORREGIDA
         const yearPatterns = [];
         
-        // 1. Año específico en diferentes formatos
-        yearPatterns.push(`\\(${year2digit}\\)`);          // (09)
-        yearPatterns.push(`\\(${parsedQuery.year}\\)`);     // (2009)
-        yearPatterns.push(`${year2digit}`);                 // solo 09
-        yearPatterns.push(`${parsedQuery.year}`);           // solo 2009
-        
-        // 2. Rangos abiertos que incluyan el año
-        // Para 2009 (09), buscar rangos como (08/..), (07/..), (06/..), etc.
+        // 1. Patrones de rango abierto que incluyan el año
+        // (08/..) incluye 2009, (07/..) incluye 2009, etc.
         const year2digitInt = parseInt(year2digit);
         for (let startYear = Math.max(0, year2digitInt - 5); startYear <= year2digitInt; startYear++) {
           const startYear2digit = startYear.toString().padStart(2, '0');
-          yearPatterns.push(`\\(${startYear2digit}/\\.\\.\\)`);  // (08/..), (07/..), etc.
+          yearPatterns.push(`\\(${startYear2digit}/\\.\\.\)`); // (08/..), (07/..), etc.
         }
         
-        // 3. Rangos cerrados - SIMPLIFICADO Y CORREGIDO
-        // Solo buscar algunos rangos comunes que puedan incluir el año
-        const yearInt = parseInt(year2digit);
+        // 2. Año específico en diferentes formatos
+        yearPatterns.push(`\\(${year2digit}\\)`);      // (09)
+        yearPatterns.push(`\\(${parsedQuery.year}\\)`); // (2009)
+        yearPatterns.push(`${year2digit}`);             // solo 09
+        yearPatterns.push(`${parsedQuery.year}`);       // solo 2009
         
-        // Rangos que empiecen algunos años antes y terminen algunos años después
+        // 3. Rangos cerrados que incluyan el año - CORREGIDO
+        // Generar solo rangos válidos que incluyan nuestro año objetivo
         for (let startOffset = 1; startOffset <= 3; startOffset++) {
           for (let endOffset = 1; endOffset <= 3; endOffset++) {
-            const startYearInt = Math.max(0, yearInt - startOffset);
-            const endYearInt = Math.min(99, yearInt + endOffset);
+            const startYearInt = Math.max(0, year2digitInt - startOffset);
+            const endYearInt = Math.min(99, year2digitInt + endOffset);
             
-            const startYearStr = startYearInt.toString().padStart(2, '0');
-            const endYearStr = endYearInt.toString().padStart(2, '0');
-            
-            // Solo agregar si el rango tiene sentido
-            if (startYearInt <= yearInt && endYearInt >= yearInt) {
-              yearPatterns.push(`\\(${startYearStr}/${endYearStr}\\)`);
+            // Solo crear el patrón si forma un rango válido
+            if (startYearInt < endYearInt && startYearInt <= year2digitInt && endYearInt >= year2digitInt) {
+              const startYear2digit = startYearInt.toString().padStart(2, '0');
+              const endYear2digit = endYearInt.toString().padStart(2, '0');
+              yearPatterns.push(`\\(${startYear2digit}/${endYear2digit}\\)`);
             }
           }
         }
         
-        // 4. Patrones adicionales comunes
-        yearPatterns.push(`${parsedQuery.year.slice(-2)}/`); // 09/
-        yearPatterns.push(`/${parsedQuery.year.slice(-2)}`); // /09
+        console.log('📅 [PIPELINE] Patrones de año generados (antes de validar):', yearPatterns);
         
-        console.log('📅 [PIPELINE] Patrones de año generados:', yearPatterns);
-        
-        // Validar que no hay patrones inválidos
-        const validPatterns = yearPatterns.filter(pattern => {
+        // 4. VALIDAR todos los patrones antes de usarlos
+        const validYearPatterns = [];
+        yearPatterns.forEach(pattern => {
           try {
-            new RegExp(pattern, 'i');
-            return true;
-          } catch (e) {
-            console.warn('⚠️ [PIPELINE] Patrón regex inválido descartado:', pattern);
-            return false;
+            new RegExp(pattern, 'i'); // Test si el patrón es válido
+            validYearPatterns.push(pattern);
+            console.log('✅ [PIPELINE] Patrón válido:', pattern);
+          } catch (error) {
+            console.warn('⚠️ [PIPELINE] Patrón regex inválido descartado:', pattern, 'Error:', error.message);
           }
         });
         
-        console.log('📅 [PIPELINE] Patrones válidos:', validPatterns);
+        console.log('📅 [PIPELINE] Patrones de año válidos finales:', validYearPatterns);
         
-        // Agregar condiciones de año al $elemMatch existente
-        if (validPatterns.length > 0) {
-          vehicleCondition.$elemMatch.$or = validPatterns.map(pattern => ({
+        // Agregar condiciones de año al $elemMatch existente solo si hay patrones válidos
+        if (validYearPatterns.length > 0) {
+          vehicleCondition.$elemMatch.$or = validYearPatterns.map(pattern => ({
             version: { $regex: pattern, $options: 'i' }
           }));
           
-          console.log('📅 [PIPELINE] Condición con año agregada:', JSON.stringify(vehicleCondition, null, 2));
+          console.log('📅 [PIPELINE] Condición con año corregida:', JSON.stringify(vehicleCondition, null, 2));
         } else {
-          console.warn('⚠️ [PIPELINE] No se pudieron generar patrones válidos para el año');
+          console.warn('⚠️ [PIPELINE] No se generaron patrones de año válidos, continuando sin filtro de año');
         }
+      }
+      
+      // ===== FUNCIÓN AUXILIAR PARA VERIFICAR SI UN AÑO ESTÁ EN RANGO =====
+      
+      function checkYearInRange(versionString, targetYear) {
+        console.log('📅 [YEAR CHECK] Verificando:', versionString, 'para año', targetYear);
+        
+        // Patrón (08/..) = desde 2008 hasta infinito
+        const openRangeMatch = versionString.match(/\((\d{2})\/\.\.\)/);
+        if (openRangeMatch) {
+          const startYear = parseInt('20' + openRangeMatch[1]);
+          const isInRange = targetYear >= startYear;
+          console.log('📅 [YEAR CHECK] Rango abierto:', startYear, '<=', targetYear, '=', isInRange);
+          return isInRange;
+        }
+        
+        // Patrón (07/12) = desde 2007 hasta 2012  
+        const closedRangeMatch = versionString.match(/\((\d{2})\/(\d{2})\)/);
+        if (closedRangeMatch) {
+          const startYear = parseInt('20' + closedRangeMatch[1]);
+          const endYear = parseInt('20' + closedRangeMatch[2]);
+          const isInRange = targetYear >= startYear && targetYear <= endYear;
+          console.log('📅 [YEAR CHECK] Rango cerrado:', startYear, '<=', targetYear, '<=', endYear, '=', isInRange);
+          return isInRange;
+        }
+        
+        // Año específico
+        const specificYearMatch = versionString.match(/(\d{4})/);
+        if (specificYearMatch) {
+          const versionYear = parseInt(specificYearMatch[1]);
+          const isMatch = targetYear === versionYear;
+          console.log('📅 [YEAR CHECK] Año específico:', versionYear, '=', targetYear, '=', isMatch);
+          return isMatch;
+        }
+        
+        console.log('📅 [YEAR CHECK] No se pudo parsear:', versionString);
+        return false;
       }
       
       matchConditions.aplicaciones = vehicleCondition;
@@ -1208,18 +1238,19 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
       const mappedPosition = mapPositionForSearch(parsedQuery.position);
       console.log('📍 [PIPELINE] Posición mapeada:', mappedPosition);
       
-      // Validar regex de posición
+      // Validar que el patrón de posición es válido antes de usarlo
       try {
-        new RegExp(mappedPosition, 'i');
+        new RegExp(mappedPosition, 'i'); // Test del regex
         matchConditions["detalles_tecnicos.Posición de la pieza"] = { 
           $regex: mappedPosition, 
           $options: 'i' 
         };
         console.log('✅ [PIPELINE] Condición de posición agregada');
-      } catch (e) {
-        console.warn('⚠️ [PIPELINE] Regex de posición inválida:', mappedPosition);
-        // Usar búsqueda simple sin regex
+      } catch (error) {
+        console.warn('⚠️ [PIPELINE] Regex de posición inválido:', mappedPosition, 'Error:', error.message);
+        // Fallback: usar búsqueda exacta sin regex
         matchConditions["detalles_tecnicos.Posición de la pieza"] = mappedPosition;
+        console.log('✅ [PIPELINE] Usando búsqueda exacta de posición como fallback');
       }
     }
     
