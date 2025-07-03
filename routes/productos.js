@@ -1021,6 +1021,7 @@ function parseNaturalQuery(query) {
   console.log('🔍 [BACKEND] Usando búsqueda libre para:', normalized);
   return { freeText: normalized };
 }
+
 function normalizeComplexProduct(productName) {
   const productMap = {
     'pastillas de freno': 'pastilla',
@@ -1040,257 +1041,159 @@ function normalizeComplexProduct(productName) {
 
 // ===== FUNCIÓN buildSearchPipeline COMPLETA Y MEJORADA =====
 
-function buildSearchPipeline(parsedQuery, limit, offset) {
+function buildSearchPipelineWithLogs(parsedQuery, limit, offset) {
   const pipeline = [];
   
-  console.log('🔧 [PIPELINE] Construyendo pipeline MEJORADO para:', parsedQuery);
+  console.log('🔧 [PIPELINE] ===== INICIO CONSTRUCCIÓN PIPELINE =====');
+  console.log('🔧 [PIPELINE] Query recibida:', JSON.stringify(parsedQuery, null, 2));
   
   if (parsedQuery.freeText) {
-    // ✅ BÚSQUEDA DE TEXTO LIBRE
+    console.log('📝 [PIPELINE] Tipo: BÚSQUEDA LIBRE');
     const searchText = parsedQuery.freeText.trim();
     const escapedSearchText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    
-    console.log('🔧 [PIPELINE] Búsqueda libre:', searchText);
     
     const searchConditions = [
       { codigo: { $regex: escapedSearchText, $options: 'i' } },
       { nombre: { $regex: escapedSearchText, $options: 'i' } },
       { categoria: { $regex: escapedSearchText, $options: 'i' } },
-      { marca: { $regex: escapedSearchText, $options: 'i' } },
       { "aplicaciones.marca": { $regex: escapedSearchText, $options: 'i' } },
-      { "aplicaciones.modelo": { $regex: escapedSearchText, $options: 'i' } },
-      { "aplicaciones.version": { $regex: escapedSearchText, $options: 'i' } },
-      { "equivalencias.codigo": { $regex: escapedSearchText, $options: 'i' } },
-      { "equivalencias.marca": { $regex: escapedSearchText, $options: 'i' } }
+      { "aplicaciones.modelo": { $regex: escapedSearchText, $options: 'i' } }
     ];
     
+    console.log('📝 [PIPELINE] Condiciones de búsqueda libre:', searchConditions.length);
     pipeline.push({ $match: { $or: searchConditions } });
     
   } else if (parsedQuery.isStructured) {
-    // ✅ BÚSQUEDA ESTRUCTURADA MEJORADA
-    console.log('🔧 [PIPELINE] Búsqueda estructurada MEJORADA');
+    console.log('🎯 [PIPELINE] Tipo: BÚSQUEDA ESTRUCTURADA');
+    console.log('📋 [PIPELINE] Detalles:', {
+      product: parsedQuery.product,
+      position: parsedQuery.position,
+      model: parsedQuery.model,
+      brand: parsedQuery.brand,
+      year: parsedQuery.year
+    });
     
     const matchConditions = { 
       tiene_precio_valido: true 
     };
+    console.log('🔧 [PIPELINE] Condición inicial:', matchConditions);
     
-    // ✅ 1. FILTRAR POR PRODUCTO/CATEGORÍA (MEJORADO)
+    // 1. FILTRAR POR PRODUCTO/CATEGORÍA
     if (parsedQuery.product) {
+      console.log('🔍 [PIPELINE] ===== PROCESANDO PRODUCTO =====');
       const validCategories = getValidCategoriesForProduct(parsedQuery.product);
       console.log('🔧 [PIPELINE] Categorías válidas para', parsedQuery.product, ':', validCategories);
       
       if (validCategories.length > 0) {
         matchConditions.categoria = { $in: validCategories };
+        console.log('✅ [PIPELINE] Agregada condición de categoría:', matchConditions.categoria);
       } else {
-        // ✅ NUEVO: Si no hay categorías específicas, buscar en nombres y categorías
-        console.log('🔧 [PIPELINE] Buscando en nombres y categorías para:', parsedQuery.product);
-        matchConditions.$or = [
-          { nombre: { $regex: parsedQuery.product, $options: 'i' } },
-          { categoria: { $regex: parsedQuery.product, $options: 'i' } }
-        ];
+        console.log('⚠️ [PIPELINE] No se encontraron categorías válidas');
       }
     }
     
-    // ✅ 2. FILTRAR POR VEHÍCULO - LÓGICA MEJORADA Y FLEXIBLE
+    // 2. FILTRAR POR VEHÍCULO
     let vehicleCondition = null;
     
-    // Caso 1: Tenemos marca Y modelo
-    if (parsedQuery.brand && parsedQuery.model) {
-      console.log('🔧 [PIPELINE] Filtrando por MARCA + MODELO:', parsedQuery.brand, parsedQuery.model);
+    if (parsedQuery.model) {
+      console.log('🚗 [PIPELINE] ===== PROCESANDO VEHÍCULO =====');
+      console.log('🚗 [PIPELINE] Modelo:', parsedQuery.model);
+      console.log('🚗 [PIPELINE] Marca:', parsedQuery.brand || 'NINGUNA');
       
-      vehicleCondition = {
-        $elemMatch: {
-          marca: { $regex: parsedQuery.brand, $options: 'i' },
-          modelo: { $regex: parsedQuery.model, $options: 'i' }
-        }
-      };
-    }
-    // Caso 2: Solo modelo (SIN marca) - NUEVO Y CLAVE
-    else if (parsedQuery.model) {
-      console.log('🔧 [PIPELINE] Filtrando SOLO por MODELO:', parsedQuery.model);
-      
-      vehicleCondition = {
-        $elemMatch: {
-          modelo: { $regex: parsedQuery.model, $options: 'i' }
-        }
-      };
-    }
-    // Caso 3: Solo marca (sin modelo)
-    else if (parsedQuery.brand) {
-      console.log('🔧 [PIPELINE] Filtrando SOLO por MARCA:', parsedQuery.brand);
-      
-      vehicleCondition = {
-        $elemMatch: {
-          marca: { $regex: parsedQuery.brand, $options: 'i' }
-        }
-      };
-    }
-    
-    // ✅ 3. AGREGAR FILTRO DE AÑO A LA CONDICIÓN DE VEHÍCULO
-    if (parsedQuery.year && vehicleCondition) {
-      console.log('🔧 [PIPELINE] Agregando filtro de AÑO:', parsedQuery.year);
-      
-      const year2digit = parsedQuery.year.slice(-2);
-      console.log('🔧 [PIPELINE] Año 2 dígitos:', year2digit);
-      
-      // ✅ PATRONES DE BÚSQUEDA DE AÑO MEJORADOS
-      const yearPatterns = [
-        `\\(${year2digit}/`,           // (09/..
-        `\\(${parsedQuery.year}`,      // (2009
-        `/${year2digit}\\)`,           // ../09)
-        `/${parsedQuery.year}\\)`,     // ../2009)
-        `\\(${year2digit}\\)`,         // (09)
-        `\\(${parsedQuery.year}\\)`,   // (2009)
-        year2digit,                    // solo 09
-        parsedQuery.year               // solo 2009
-      ];
-      
-      // Agregar condiciones de año al $elemMatch existente
-      vehicleCondition.$elemMatch.$or = yearPatterns.map(pattern => ({
-        version: { $regex: pattern, $options: 'i' }
-      }));
-    }
-    
-    // Aplicar condición de vehículo si existe
-    if (vehicleCondition) {
-      if (matchConditions.$or) {
-        // Ya existe $or (de búsqueda de producto), usar $and
-        matchConditions.$and = [
-          { $or: matchConditions.$or },
-          { aplicaciones: vehicleCondition }
-        ];
-        delete matchConditions.$or;
+      if (parsedQuery.brand) {
+        console.log('🚗 [PIPELINE] Creando condición: MARCA + MODELO');
+        vehicleCondition = {
+          $elemMatch: {
+            marca: { $regex: parsedQuery.brand, $options: 'i' },
+            modelo: { $regex: parsedQuery.model, $options: 'i' }
+          }
+        };
       } else {
-        matchConditions.aplicaciones = vehicleCondition;
+        console.log('🚗 [PIPELINE] Creando condición: SOLO MODELO');
+        vehicleCondition = {
+          $elemMatch: {
+            modelo: { $regex: parsedQuery.model, $options: 'i' }
+          }
+        };
       }
+      
+      console.log('🚗 [PIPELINE] Condición de vehículo creada:', JSON.stringify(vehicleCondition, null, 2));
+      
+      // 3. AGREGAR AÑO SI EXISTE
+      if (parsedQuery.year) {
+        console.log('📅 [PIPELINE] ===== PROCESANDO AÑO =====');
+        console.log('📅 [PIPELINE] Año completo:', parsedQuery.year);
+        
+        const year2digit = parsedQuery.year.slice(-2);
+        console.log('📅 [PIPELINE] Año 2 dígitos:', year2digit);
+        
+        const yearPatterns = [
+          `\\(${year2digit}/`,           // (09/..
+          `\\(${parsedQuery.year}`,      // (2009
+          year2digit,                    // solo 09
+          parsedQuery.year               // solo 2009
+        ];
+        
+        console.log('📅 [PIPELINE] Patrones de año:', yearPatterns);
+        
+        vehicleCondition.$elemMatch.$or = yearPatterns.map(pattern => ({
+          version: { $regex: pattern, $options: 'i' }
+        }));
+        
+        console.log('📅 [PIPELINE] Condición con año agregada:', JSON.stringify(vehicleCondition, null, 2));
+      }
+      
+      matchConditions.aplicaciones = vehicleCondition;
+      console.log('✅ [PIPELINE] Condición de aplicaciones agregada al match');
     }
     
-    // ✅ 4. FILTRAR POR POSICIÓN (MEJORADO)
+    // 4. FILTRAR POR POSICIÓN
     if (parsedQuery.position) {
-      const mappedPosition = mapPositionForSearch(parsedQuery.position);
-      console.log('🔧 [PIPELINE] Filtrando por POSICIÓN:', parsedQuery.position, '→', mappedPosition);
+      console.log('📍 [PIPELINE] ===== PROCESANDO POSICIÓN =====');
+      console.log('📍 [PIPELINE] Posición original:', parsedQuery.position);
       
-      const positionCondition = {
-        "detalles_tecnicos.Posición de la pieza": { 
-          $regex: mappedPosition, 
-          $options: 'i' 
-        }
+      const mappedPosition = mapPositionForSearch(parsedQuery.position);
+      console.log('📍 [PIPELINE] Posición mapeada:', mappedPosition);
+      
+      matchConditions["detalles_tecnicos.Posición de la pieza"] = { 
+        $regex: mappedPosition, 
+        $options: 'i' 
       };
       
-      // Combinar con condiciones existentes
-      if (matchConditions.$and) {
-        matchConditions.$and.push(positionCondition);
-      } else if (matchConditions.$or) {
-        matchConditions.$and = [
-          { $or: matchConditions.$or },
-          positionCondition
-        ];
-        delete matchConditions.$or;
-      } else {
-        Object.assign(matchConditions, positionCondition);
-      }
+      console.log('✅ [PIPELINE] Condición de posición agregada');
     }
     
-    // ✅ 5. MANEJAR CASOS ESPECIALES DE BÚSQUEDA
-    // Caso: Solo año sin modelo ni marca
-    if (parsedQuery.year && !parsedQuery.model && !parsedQuery.brand) {
-      console.log('🔧 [PIPELINE] Filtrando SOLO por AÑO:', parsedQuery.year);
-      
-      const year2digit = parsedQuery.year.slice(-2);
-      const yearOnlyConditions = [
-        { "aplicaciones.version": { $regex: `\\(${year2digit}/`, $options: 'i' } },
-        { "aplicaciones.version": { $regex: parsedQuery.year, $options: 'i' } }
-      ];
-      
-      if (matchConditions.$and) {
-        matchConditions.$and.push({ $or: yearOnlyConditions });
-      } else if (matchConditions.$or) {
-        matchConditions.$and = [
-          { $or: matchConditions.$or },
-          { $or: yearOnlyConditions }
-        ];
-        delete matchConditions.$or;
-      } else {
-        matchConditions.$or = yearOnlyConditions;
-      }
-    }
+    console.log('🏁 [PIPELINE] ===== CONDICIONES FINALES =====');
+    console.log('🏁 [PIPELINE] Match completo:', JSON.stringify(matchConditions, null, 2));
     
-    console.log('🔧 [PIPELINE] Condiciones finales del match:', JSON.stringify(matchConditions, null, 2));
     pipeline.push({ $match: matchConditions });
     
   } else {
-    // ✅ FALLBACK: Búsqueda básica
-    console.log('🔧 [PIPELINE] Búsqueda fallback - productos con precio válido');
-    pipeline.push({ 
-      $match: { 
-        tiene_precio_valido: true 
-      } 
-    });
+    console.log('🔄 [PIPELINE] Tipo: FALLBACK');
+    pipeline.push({ $match: { tiene_precio_valido: true } });
   }
   
-  // ✅ 6. SCORING INTELIGENTE Y MEJORADO
+  // Resto del pipeline
   pipeline.push({
     $addFields: {
       relevanceScore: {
         $add: [
-          // Score base por existir
           10,
-          
-          // Score alto por tener nombre relevante
           { $cond: [{ $ne: ["$nombre", null] }, 100, 0] },
-          
-          // Score por cantidad de aplicaciones (más aplicaciones = más versátil)
-          { $multiply: [{ $size: { $ifNull: ["$aplicaciones", []] } }, 15] },
-          
-          // Score por tener detalles técnicos completos
-          { $cond: [{ $ne: ["$detalles_tecnicos", null] }, 50, 0] },
-          
-          // Score por tener equivalencias (compatibilidad)
-          { $multiply: [{ $size: { $ifNull: ["$equivalencias", []] } }, 20] },
-          
-          // Score por tener imagen
-          { $cond: [{ $and: [
-            { $ne: ["$imagen", null] },
-            { $not: { $regexMatch: { input: "$imagen", regex: "noimage" } } }
-          ]}, 25, 0] },
-          
-          // ✅ NUEVO: Score específico según tipo de búsqueda
-          { $cond: [
-            { $regexMatch: { input: "$codigo", regex: "^[0-9]+[A-Z]*$" } }, // Código numérico + letras
-            30, 0
-          ]},
-          
-          // Score por marca reconocida
-          { $cond: [{ $in: ["$marca", ["CORVEN", "SADAR", "FERODO", "JURID", "VALEO"]] }, 40, 0] }
+          { $multiply: [{ $size: { $ifNull: ["$aplicaciones", []] } }, 15] }
         ]
       }
     }
   });
   
-  // ✅ 7. ORDENAMIENTO INTELIGENTE
-  pipeline.push({ 
-    $sort: { 
-      relevanceScore: -1,  // Mayor relevancia primero
-      codigo: 1            // Luego por código alfabéticamente
-    } 
-  });
-  
-  // ✅ 8. PAGINACIÓN
-  if (offset > 0) {
-    pipeline.push({ $skip: offset });
-  }
-  
+  pipeline.push({ $sort: { relevanceScore: -1, codigo: 1 } });
+  if (offset > 0) pipeline.push({ $skip: offset });
   pipeline.push({ $limit: limit });
+  pipeline.push({ $project: { relevanceScore: 0, _id: 0 } });
   
-  // ✅ 9. PROYECCIÓN FINAL (limpiar campos internos)
-  pipeline.push({ 
-    $project: { 
-      relevanceScore: 0,  // No mostrar score en respuesta
-      _id: 0              // No mostrar _id de MongoDB
-    } 
-  });
-  
-  console.log('🔧 [PIPELINE] Pipeline completo construido con', pipeline.length, 'etapas');
+  console.log('🏗️ [PIPELINE] ===== PIPELINE COMPLETADO =====');
+  console.log('🏗️ [PIPELINE] Total etapas:', pipeline.length);
+  console.log('🏗️ [PIPELINE] Pipeline final:', JSON.stringify(pipeline, null, 2));
   
   return pipeline;
 }
@@ -1383,6 +1286,10 @@ function getValidCategoriesForProduct(product) {
 
 
 function mapPositionForSearch(position) {
+  console.log('📍 [POSITION MAP] ===== INICIO MAPEO POSICIÓN =====');
+  console.log('📍 [POSITION MAP] Entrada original:', position);
+  console.log('📍 [POSITION MAP] Tipo de entrada:', typeof position);
+  
   const positionMap = {
     'delantero': 'Delantero',
     'delanteros': 'Delantero',
@@ -1419,8 +1326,24 @@ function mapPositionForSearch(position) {
     'bilateral': '(Izquierdo|Derecho|Bilateral)'
   };
   
+  console.log('📍 [POSITION MAP] Mapa de posiciones disponible:', Object.keys(positionMap));
+  
   const normalizedPosition = position.toLowerCase().trim();
-  return positionMap[normalizedPosition] || position;
+  console.log('📍 [POSITION MAP] Posición normalizada:', normalizedPosition);
+  
+  const mappedPosition = positionMap[normalizedPosition] || position;
+  console.log('📍 [POSITION MAP] Posición mapeada:', mappedPosition);
+  
+  // ✅ VERIFICAR SI SE ENCONTRÓ MAPEO
+  if (positionMap[normalizedPosition]) {
+    console.log('✅ [POSITION MAP] Mapeo ENCONTRADO en diccionario');
+  } else {
+    console.log('⚠️ [POSITION MAP] Mapeo NO encontrado, usando original');
+  }
+  
+  console.log('📍 [POSITION MAP] ===== FIN MAPEO POSICIÓN =====');
+  
+  return mappedPosition;
 }
 router.get('/test-parser', async (req, res) => {
   const testQuery = 'amortiguador trasero corolla 2009';
@@ -1467,5 +1390,195 @@ router.get('/test-data', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+router.get('/test-pipeline', async (req, res) => {
+  try {
+    console.log('🧪 [TEST PIPELINE] Iniciando test específico...');
+    
+    // Test con tu query exacta
+    const testQuery = 'amortiguador trasero corolla 2009';
+    const parsedQuery = parseNaturalQuery(testQuery);
+    
+    console.log('🧪 [TEST PIPELINE] Query parseada:', JSON.stringify(parsedQuery, null, 2));
+    
+    // Construir pipeline con debug
+    const pipeline = buildSearchPipeline(parsedQuery, 5, 0);
+    
+    console.log('🧪 [TEST PIPELINE] Pipeline construido:', JSON.stringify(pipeline, null, 2));
+    
+    // Ejecutar en MongoDB
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+    
+    console.log('🧪 [TEST PIPELINE] Ejecutando en MongoDB...');
+    const results = await collection.aggregate(pipeline).toArray();
+    
+    console.log(`🧪 [TEST PIPELINE] Resultados: ${results.length}`);
+    
+    // Test individual de cada filtro
+    console.log('🔬 [TEST INDIVIDUAL] Probando filtros por separado...');
+    
+    // Test 1: Solo categoría
+    const categoryTest = await collection.find({
+      categoria: { $in: ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'] }
+    }).limit(5).toArray();
+    console.log(`🔬 [TEST] Solo categoría: ${categoryTest.length} productos`);
+    
+    // Test 2: Solo modelo COROLLA
+    const modelTest = await collection.find({
+      'aplicaciones.modelo': { $regex: 'COROLLA', $options: 'i' }
+    }).limit(5).toArray();
+    console.log(`🔬 [TEST] Solo modelo COROLLA: ${modelTest.length} productos`);
+    
+    // Test 3: Solo año 2009
+    const yearTest = await collection.find({
+      'aplicaciones.version': { $regex: '\\(09/', $options: 'i' }
+    }).limit(5).toArray();
+    console.log(`🔬 [TEST] Solo año 2009: ${yearTest.length} productos`);
+    
+    // Test 4: Categoría + modelo
+    const categoryModelTest = await collection.find({
+      categoria: { $in: ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'] },
+      'aplicaciones.modelo': { $regex: 'COROLLA', $options: 'i' }
+    }).limit(5).toArray();
+    console.log(`🔬 [TEST] Categoría + modelo: ${categoryModelTest.length} productos`);
+    
+    // Test 5: Todo combinado
+    const allCombinedTest = await collection.find({
+      categoria: { $in: ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'] },
+      'aplicaciones.modelo': { $regex: 'COROLLA', $options: 'i' },
+      'aplicaciones.version': { $regex: '\\(09/', $options: 'i' }
+    }).limit(5).toArray();
+    console.log(`🔬 [TEST] Todo combinado: ${allCombinedTest.length} productos`);
+    
+    // Test 6: Con posición trasero
+    const positionTest = await collection.find({
+      categoria: { $in: ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'] },
+      'aplicaciones.modelo': { $regex: 'COROLLA', $options: 'i' },
+      'aplicaciones.version': { $regex: '\\(09/', $options: 'i' },
+      'detalles_tecnicos.Posición de la pieza': { $regex: 'Trasero', $options: 'i' }
+    }).limit(5).toArray();
+    console.log(`🔬 [TEST] Con posición trasero: ${positionTest.length} productos`);
+    
+    // Mostrar ejemplos de productos encontrados
+    if (categoryTest.length > 0) {
+      console.log('📋 [EJEMPLO] Amortiguador COROLLA encontrado:');
+      const ejemplo = categoryTest.find(p => p.aplicaciones?.some(app => 
+        app.modelo?.toLowerCase().includes('corolla')
+      ));
+      if (ejemplo) {
+        console.log(`    Código: ${ejemplo.codigo}`);
+        console.log(`    Categoría: ${ejemplo.categoria}`);
+        console.log(`    Posición: ${ejemplo.detalles_tecnicos?.["Posición de la pieza"] || 'N/A'}`);
+        const corollaApp = ejemplo.aplicaciones?.find(app => 
+          app.modelo?.toLowerCase().includes('corolla')
+        );
+        if (corollaApp) {
+          console.log(`    Aplicación: ${corollaApp.marca} ${corollaApp.modelo} ${corollaApp.version}`);
+        }
+      }
+    }
+    
+    res.json({
+      success: true,
+      query: testQuery,
+      parsedQuery: parsedQuery,
+      pipelineResults: results.length,
+      individualTests: {
+        categoryOnly: categoryTest.length,
+        modelOnly: modelTest.length,
+        yearOnly: yearTest.length,
+        categoryAndModel: categoryModelTest.length,
+        allCombined: allCombinedTest.length,
+        withPosition: positionTest.length
+      },
+      examples: {
+        pipelineResults: results.slice(0, 2).map(r => ({
+          codigo: r.codigo,
+          categoria: r.categoria,
+          aplicaciones: r.aplicaciones?.length || 0,
+          posicion: r.detalles_tecnicos?.["Posición de la pieza"] || 'N/A'
+        })),
+        categoryExample: categoryTest.slice(0, 2).map(r => ({
+          codigo: r.codigo,
+          categoria: r.categoria,
+          aplicaciones: r.aplicaciones?.map(a => `${a.marca} ${a.modelo} ${a.version}`) || []
+        }))
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ [TEST PIPELINE] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+router.get('/test-pipeline-detailed', async (req, res) => {
+  try {
+    console.log('🧪 [TEST DETAILED] ===== INICIANDO TEST DETALLADO =====');
+    
+    const testQuery = 'amortiguador trasero corolla 2009';
+    console.log('🧪 [TEST DETAILED] Query de prueba:', testQuery);
+    
+    // Parse de la query
+    const parsedQuery = parseNaturalQuery(testQuery);
+    console.log('🧪 [TEST DETAILED] Query parseada:', JSON.stringify(parsedQuery, null, 2));
+    
+    // Construir pipeline con logs detallados
+    const pipeline = buildSearchPipelineWithLogs(parsedQuery, 10, 0);
+    
+    // Conectar y ejecutar
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+    
+    console.log('🧪 [TEST DETAILED] ===== EJECUTANDO EN MONGODB =====');
+    const results = await collection.aggregate(pipeline).toArray();
+    
+    console.log('🧪 [TEST DETAILED] ===== RESULTADOS =====');
+    console.log(`🧪 [TEST DETAILED] Total resultados: ${results.length}`);
+    
+    if (results.length > 0) {
+      console.log('🧪 [TEST DETAILED] Primeros resultados:');
+      results.slice(0, 3).forEach((result, index) => {
+        console.log(`  ${index + 1}. ${result.codigo} - ${result.categoria}`);
+        console.log(`     Posición: ${result.detalles_tecnicos?.["Posición de la pieza"] || 'N/A'}`);
+        if (result.aplicaciones && result.aplicaciones.length > 0) {
+          const corollaApp = result.aplicaciones.find(app => 
+            app.modelo?.toLowerCase().includes('corolla')
+          );
+          if (corollaApp) {
+            console.log(`     Aplicación COROLLA: ${corollaApp.marca} ${corollaApp.modelo} ${corollaApp.version}`);
+          }
+        }
+      });
+    } else {
+      console.log('❌ [TEST DETAILED] No se encontraron resultados');
+    }
+    
+    res.json({
+      success: true,
+      query: testQuery,
+      parsedQuery: parsedQuery,
+      results: results.length,
+      examples: results.slice(0, 5).map(r => ({
+        codigo: r.codigo,
+        categoria: r.categoria,
+        posicion: r.detalles_tecnicos?.["Posición de la pieza"] || 'N/A',
+        aplicaciones: r.aplicaciones?.map(a => `${a.marca} ${a.modelo} ${a.version}`) || []
+      }))
+    });
+    
+  } catch (error) {
+    console.error('❌ [TEST DETAILED] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
