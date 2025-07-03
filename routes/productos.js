@@ -426,9 +426,8 @@ router.get('/filtros/:tipo', async (req, res) => {
   }
 });
 module.exports = router;
-// ===== AGREGAR ESTOS ENDPOINTS A TU productos.js =====
 
-// 🔍 BÚSQUEDA INTELIGENTE - Endpoint principal
+
 router.get('/busqueda', async (req, res) => {
   try {
     const { 
@@ -444,7 +443,7 @@ router.get('/busqueda', async (req, res) => {
       });
     }
 
-    console.log('🔍 [BÚSQUEDA] Query:', q);
+    console.log('🔍 [BÚSQUEDA BACKEND] Query recibida:', q);
 
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
@@ -452,18 +451,28 @@ router.get('/busqueda', async (req, res) => {
 
     // ✅ PARSEAR QUERY CON PATRONES INTELIGENTES
     const parsedQuery = parseNaturalQuery(q.trim());
-    console.log('🧠 [BÚSQUEDA] Query parseada:', parsedQuery);
+    console.log('🧠 [BACKEND] Query parseada:', parsedQuery);
 
     // ✅ CONSTRUIR PIPELINE DE AGREGACIÓN
     const pipeline = buildSearchPipeline(parsedQuery, parseInt(limit), parseInt(offset));
-    console.log('📋 [BÚSQUEDA] Pipeline:', JSON.stringify(pipeline, null, 2));
+    console.log('📋 [BACKEND] Pipeline construido:', JSON.stringify(pipeline, null, 2));
 
     // ✅ EJECUTAR BÚSQUEDA
     const startTime = Date.now();
     const results = await collection.aggregate(pipeline).toArray();
     const processingTime = Date.now() - startTime;
 
-    console.log(`✅ [BÚSQUEDA] ${results.length} resultados en ${processingTime}ms`);
+    console.log(`✅ [BACKEND] ${results.length} resultados encontrados en ${processingTime}ms`);
+    
+    // ✅ DEBUG: Mostrar algunos resultados
+    if (results.length > 0) {
+      console.log('📦 [BACKEND] Primeros 3 resultados:');
+      results.slice(0, 3).forEach((result, index) => {
+        console.log(`  ${index + 1}. ${result.codigo} - ${result.categoria} - ${result.nombre}`);
+      });
+    } else {
+      console.log('❌ [BACKEND] No se encontraron resultados - revisando pipeline...');
+    }
 
     res.json({
       success: true,
@@ -476,7 +485,7 @@ router.get('/busqueda', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ [BÚSQUEDA] Error:', error);
+    console.error('❌ [BÚSQUEDA BACKEND] Error:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Error en búsqueda'
@@ -801,115 +810,104 @@ function parseNaturalQuery(query) {
 function buildSearchPipeline(parsedQuery, limit, offset) {
   const pipeline = [];
   
+  console.log('🔧 [PIPELINE] Construyendo para:', parsedQuery);
+  
   if (parsedQuery.freeText) {
-    const formatted = formatearParaBusqueda(parsedQuery.freeText);
+    // ✅ BÚSQUEDA DE TEXTO LIBRE (actual)
     const searchText = parsedQuery.freeText.trim();
     const escapedSearchText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     
-    console.log('🎯 [FORMATO] Query original:', searchText);
-    console.log('🎯 [FORMATO] Query formateada:', formatted);
+    console.log('🔧 [PIPELINE] Búsqueda de texto libre:', searchText);
     
     const searchConditions = [];
     
-    // 1. BÚSQUEDAS EXACTAS (sin regex)
+    // Búsquedas básicas
     searchConditions.push(
-      { codigo: searchText },
-      { "equivalencias.codigo": searchText }
+      { codigo: { $regex: escapedSearchText, $options: 'i' } },
+      { nombre: { $regex: escapedSearchText, $options: 'i' } },
+      { categoria: { $regex: escapedSearchText, $options: 'i' } },
+      { "aplicaciones.marca": { $regex: escapedSearchText, $options: 'i' } },
+      { "aplicaciones.modelo": { $regex: escapedSearchText, $options: 'i' } }
     );
-    
-    // 2. BÚSQUEDAS CON REGEX SIMPLE (solo en campos que sabemos que existen)
-    if (searchText.length > 2) {
-      searchConditions.push(
-        { codigo: { $regex: escapedSearchText, $options: 'i' } },
-        { nombre: { $regex: escapedSearchText, $options: 'i' } },
-        { categoria: { $regex: escapedSearchText, $options: 'i' } },
-        { "equivalencias.codigo": { $regex: escapedSearchText, $options: 'i' } },
-        { "aplicaciones.marca": { $regex: escapedSearchText, $options: 'i' } },
-        { "aplicaciones.modelo": { $regex: escapedSearchText, $options: 'i' } }
-      );
-    }
-    
-    // 3. BÚSQUEDA CON ÍNDICE COMPUESTO (si tenemos datos formateados)
-    if (formatted.categoria && formatted.marca && formatted.modelo) {
-      const compoundMatch = {
-        categoria: formatted.categoria,
-        "aplicaciones.marca": formatted.marca,
-        "aplicaciones.modelo": formatted.modelo
-      };
-      
-      if (formatted.posicion) {
-        compoundMatch["detalles_tecnicos.Posición de la pieza"] = formatted.posicion;
-      }
-      
-      searchConditions.push(compoundMatch);
-    }
-    
-    // 4. BÚSQUEDAS POR TÉRMINOS INDIVIDUALES
-    const terms = searchText.toLowerCase().split(/\s+/).filter(t => t.length > 1);
-    terms.forEach(term => {
-      const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      
-      searchConditions.push(
-        { codigo: { $regex: escapedTerm, $options: 'i' } },
-        { nombre: { $regex: escapedTerm, $options: 'i' } },
-        { categoria: { $regex: escapedTerm, $options: 'i' } },
-        { "aplicaciones.marca": { $regex: escapedTerm, $options: 'i' } },
-        { "aplicaciones.modelo": { $regex: escapedTerm, $options: 'i' } }
-      );
-    });
     
     pipeline.push({ $match: { $or: searchConditions } });
     
   } else {
-    // BÚSQUEDA ESTRUCTURADA
-    const conditions = [];
+    // ✅ NUEVA LÓGICA: BÚSQUEDA ESTRUCTURADA
+    console.log('🔧 [PIPELINE] Búsqueda estructurada detectada');
     
+    const matchConditions = {
+      tiene_precio_valido: true
+    };
+    
+    // ✅ FILTRAR POR PRODUCTO/CATEGORÍA
     if (parsedQuery.product) {
-      const escapedProduct = parsedQuery.product.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      conditions.push({
-        $or: [
-          { categoria: { $regex: escapedProduct, $options: 'i' } },
-          { nombre: { $regex: escapedProduct, $options: 'i' } }
-        ]
-      });
+      const validCategories = getValidCategoriesForProduct(parsedQuery.product);
+      console.log('🔧 [PIPELINE] Categorías válidas para', parsedQuery.product, ':', validCategories);
+      
+      if (validCategories.length > 0) {
+        matchConditions.categoria = { $in: validCategories };
+      }
     }
     
+    // ✅ FILTRAR POR VEHÍCULO (MARCA + MODELO)
     if (parsedQuery.brand && parsedQuery.model) {
-      const escapedBrand = parsedQuery.brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const escapedModel = parsedQuery.model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      conditions.push({
-        "aplicaciones.marca": { $regex: escapedBrand, $options: 'i' },
-        "aplicaciones.modelo": { $regex: escapedModel, $options: 'i' }
-      });
+      console.log('🔧 [PIPELINE] Filtrando por vehículo:', parsedQuery.brand, parsedQuery.model);
+      
+      // Usar $elemMatch para asegurar que marca Y modelo estén en la MISMA aplicación
+      matchConditions.aplicaciones = {
+        $elemMatch: {
+          marca: { $regex: parsedQuery.brand, $options: 'i' },
+          modelo: { $regex: parsedQuery.model, $options: 'i' }
+        }
+      };
     }
     
-    pipeline.push({
-      $match: conditions.length > 0 ? { $and: conditions } : {}
-    });
+    // ✅ FILTRAR POR POSICIÓN
+    if (parsedQuery.position) {
+      console.log('🔧 [PIPELINE] Filtrando por posición:', parsedQuery.position);
+      matchConditions["detalles_tecnicos.Posición de la pieza"] = { 
+        $regex: mapPositionForSearch(parsedQuery.position), 
+        $options: 'i' 
+      };
+    }
+    
+    // ✅ FILTRAR POR AÑO/VERSIÓN (más permisivo)
+    if (parsedQuery.year || parsedQuery.version) {
+      console.log('🔧 [PIPELINE] Filtrando por año/versión:', parsedQuery.year, parsedQuery.version);
+      
+      const versionConditions = [];
+      
+      if (parsedQuery.version) {
+        versionConditions.push({
+          "aplicaciones.version": { $regex: parsedQuery.version, $options: 'i' }
+        });
+      }
+      
+      if (parsedQuery.year) {
+        // Buscar el año en formato de 2 o 4 dígitos
+        const year2digit = parsedQuery.year.slice(-2);
+        versionConditions.push({
+          "aplicaciones.version": { $regex: `\\(${year2digit}/`, $options: 'i' }
+        });
+      }
+      
+      if (versionConditions.length > 0) {
+        matchConditions.$or = versionConditions;
+      }
+    }
+    
+    console.log('🔧 [PIPELINE] Condiciones finales:', JSON.stringify(matchConditions, null, 2));
+    pipeline.push({ $match: matchConditions });
   }
   
-  // ✅ SCORING SIMPLIFICADO (SIN $regexMatch problemático)
+  // ✅ SCORING BÁSICO
   pipeline.push({
     $addFields: {
       relevanceScore: {
         $add: [
-          // Código exacto = 1000
-          { $cond: [{ $eq: ["$codigo", parsedQuery.freeText || ""] }, 1000, 0] },
-          
-          // Equivalencia exacta = 900  
-          { $cond: [{ $in: [parsedQuery.freeText || "", "$equivalencias.codigo"] }, 900, 0] },
-          
-          // Si el nombre existe y no es null = 100 puntos base
-          { $cond: [{ $and: [{ $ne: ["$nombre", null] }, { $ne: ["$nombre", ""] }] }, 100, 0] },
-          
-          // Si tiene aplicaciones = 50 puntos base
-          { $cond: [{ $gt: [{ $size: { $ifNull: ["$aplicaciones", []] } }, 0] }, 50, 0] },
-          
-          // Puntos por categoría formateada
-          { $cond: [
-            { $in: ["$categoria", ["Amort CORVEN", "Pastillas CORVEN HT", "Discos y Camp CORVEN"]] },
-            200, 0
-          ]}
+          { $cond: [{ $ne: ["$nombre", null] }, 100, 0] },
+          { $cond: [{ $gt: [{ $size: { $ifNull: ["$aplicaciones", []] } }, 0] }, 50, 0] }
         ]
       }
     }
@@ -924,50 +922,30 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
   return pipeline;
 }
 
-// ===== SINÓNIMOS Y MAPEOS (del frontend original) =====
-const BRAND_SYNONYMS = {
-  'vw': 'volkswagen',
-  'volks': 'volkswagen', 
-  'chevy': 'chevrolet',
-  'chev': 'chevrolet',
-  'mercedes': 'mercedes benz',
-  'benz': 'mercedes benz'
-};
-
-const PRODUCT_CATEGORIES = {
-  'amortiguador': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
-  'amortiguadores': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
-  'pastilla': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
-  'pastillas': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
-  'freno': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
-  'frenos': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
-  'disco': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
-  'discos': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
-  'embrague': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
-  'embragues': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
-  'rotula': ['Rotulas CORVEN', 'Rotulas SADAR'],
-  'rotulas': ['Rotulas CORVEN', 'Rotulas SADAR']
-};
-
-function getValidCategories(product) {
+function getValidCategoriesForProduct(product) {
   const categoryMap = {
     'amortiguador': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
     'pastilla': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
     'disco': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
     'cazoleta': ['Cazoletas CORVEN', 'Cazoletas SADAR'],
     'bieleta': ['Bieletas CORVEN', 'Bieletas SADAR'],
-    'rotula': ['Rotulas CORVEN', 'Rotulas SADAR']
+    'rotula': ['Rotulas CORVEN', 'Rotulas SADAR'],
+    'embrague': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO']
   };
   
   return categoryMap[product] || [];
 }
 
-function mapPosition(position) {
+function mapPositionForSearch(position) {
   const positionMap = {
     'delantero': 'Delantero',
     'del': 'Delantero', 
     'trasero': 'Trasero',
-    'pos': 'Trasero'
+    'pos': 'Trasero',
+    'izquierdo': 'Izquierdo',
+    'izq': 'Izquierdo',
+    'derecho': 'Derecho',
+    'der': 'Derecho'
   };
   
   return positionMap[position] || position;
