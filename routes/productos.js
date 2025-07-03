@@ -792,82 +792,6 @@ function normalizeText(text) {
     .toLowerCase()
     .trim();
 }
-// 🎯 FORMATEAR QUERY PARA BÚSQUEDA INTELIGENTE
-function formatearParaBusqueda(query) {
-  const formatted = {
-    categoria: null,
-    posicion: null,
-    marca: null,
-    modelo: null,
-    version: null
-  };
-
-  // ✅ MAPEAR CATEGORÍAS
-  const categoriasMap = {
-    'amortiguador': 'Amort CORVEN',
-    'amortiguadores': 'Amort CORVEN', 
-    'pastilla': 'Pastillas CORVEN HT',
-    'pastillas': 'Pastillas CORVEN HT',
-    'disco': 'Discos y Camp CORVEN',
-    'discos': 'Discos y Camp CORVEN',
-    'rotula': 'Rotulas CORVEN',
-    'rotulas': 'Rotulas CORVEN',
-    'brazo': 'Brazos Susp CORVEN',
-    'brazos': 'Brazos Susp CORVEN',
-    'extremo': 'Extremos CORVEN',
-    'extremos': 'Extremos CORVEN',
-    'bieleta': 'Bieletas CORVEN',
-    'bieletas': 'Bieletas CORVEN'
-  };
-
-  // ✅ MAPEAR POSICIONES
-  const posicionesMap = {
-    'delantero': 'Delantero',
-    'delanteros': 'Delantero',
-    'del': 'Delantero',
-    'trasero': 'Trasero', 
-    'traseros': 'Trasero',
-    'pos': 'Trasero'
-  };
-
-  // ✅ MAPEAR MARCAS
-  const marcasMap = {
-    'ford': 'FORD',
-    'vw': 'VOLKSWAGEN',
-    'volkswagen': 'VOLKSWAGEN',
-    'chevrolet': 'CHEVROLET',
-    'chevy': 'CHEVROLET',
-    'peugeot': 'PEUGEOT',
-    'renault': 'RENAULT'
-  };
-
-  // ✅ NORMALIZAR MODELOS
-  const modelosMap = {
-    'ka': 'KA',
-    'escort': 'ESCORT',
-    'focus': 'FOCUS',
-    'gol': 'GOL',
-    '206': '206',
-    '207': '207'
-  };
-
-  // ✅ PROCESAR QUERY
-  const terms = normalizeText(query).split(/\s+/);
-  
-  terms.forEach(term => {
-    if (categoriasMap[term]) formatted.categoria = categoriasMap[term];
-    if (posicionesMap[term]) formatted.posicion = posicionesMap[term];
-    if (marcasMap[term]) formatted.marca = marcasMap[term];
-    if (modelosMap[term]) formatted.modelo = modelosMap[term];
-    
-    // Versiones/años
-    if (/^\d{2,4}$/.test(term)) {
-      formatted.version = term.length === 2 ? `(${term}/` : `(${term.slice(-2)}/`;
-    }
-  });
-
-  return formatted;
-}
 
 function parseNaturalQuery(query) {
   const normalized = normalizeText(query);
@@ -1119,63 +1043,95 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
       
       console.log('🚗 [PIPELINE] Condición de vehículo creada:', JSON.stringify(vehicleCondition, null, 2));
       
-      // 3. AGREGAR AÑO SI EXISTE - VERSIÓN CORREGIDA
+      // 3. AGREGAR AÑO SI EXISTE - LÓGICA BIDIRECCIONAL COMPLETA
       if (parsedQuery.year && vehicleCondition) {
-        console.log('🔧 [PIPELINE] Agregando filtro de AÑO:', parsedQuery.year);
+        console.log('🔧 [PIPELINE] Agregando filtro de AÑO BIDIRECCIONAL:', parsedQuery.year);
         
         const targetYear = parseInt(parsedQuery.year);
         const year2digit = parsedQuery.year.slice(-2);
         console.log('🔧 [PIPELINE] Año objetivo:', targetYear);
         console.log('🔧 [PIPELINE] Año 2 dígitos:', year2digit);
         
-        // ✅ NUEVA LÓGICA: Buscar años que INCLUYAN el año objetivo - CORREGIDA
+        // ✅ LÓGICA BIDIRECCIONAL: Buscar años que incluyan el año objetivo
         const yearPatterns = [];
         
-        // 1. Patrones de rango abierto que incluyan el año
-        // (08/..) incluye 2009, (07/..) incluye 2009, etc.
+        // 1. Año específico en diferentes formatos
+        yearPatterns.push(`\\(${year2digit}\\)`);          // (09) - año específico
+        yearPatterns.push(`\\(${parsedQuery.year}\\)`);     // (2009) - año completo
+        yearPatterns.push(`${year2digit}`);                 // 09 - año suelto de 2 dígitos
+        yearPatterns.push(`${parsedQuery.year}`);           // 2009 - año suelto completo
+        
+        // 2. RANGOS HACIA ADELANTE: (XX/..) = "desde XX en adelante"
+        // Para 2009, buscar (08/..), (07/..), (06/..), etc.
         const year2digitInt = parseInt(year2digit);
-        for (let startYear = Math.max(0, year2digitInt - 5); startYear <= year2digitInt; startYear++) {
+        console.log('📅 [PIPELINE] Generando rangos hacia adelante...');
+        for (let startYear = 0; startYear <= year2digitInt; startYear++) {
           const startYear2digit = startYear.toString().padStart(2, '0');
-          yearPatterns.push(`\\(${startYear2digit}/\\.\\.\)`); // (08/..), (07/..), etc.
+          // Con paréntesis
+          yearPatterns.push(`\\(${startYear2digit}/\\.\\.\\)`);    // (08/..)
+          // Sin paréntesis
+          yearPatterns.push(`${startYear2digit}/\\.\\.`);          // 08/..
         }
         
-        // 2. Año específico en diferentes formatos
-        yearPatterns.push(`\\(${year2digit}\\)`);      // (09)
-        yearPatterns.push(`\\(${parsedQuery.year}\\)`); // (2009)
-        yearPatterns.push(`${year2digit}`);             // solo 09
-        yearPatterns.push(`${parsedQuery.year}`);       // solo 2009
+        // 3. RANGOS HACIA ATRÁS: (../XX) = "hasta XX" o "../XX"
+        // Para 2009, buscar (../09), (../10), (../11), etc.
+        console.log('📅 [PIPELINE] Generando rangos hacia atrás...');
+        for (let endYear = year2digitInt; endYear <= 99; endYear++) {
+          const endYear2digit = endYear.toString().padStart(2, '0');
+          // Con paréntesis
+          yearPatterns.push(`\\(\\.\\.\/${endYear2digit}\\)`);     // (../09)
+          // Sin paréntesis
+          yearPatterns.push(`\\.\\.\/${endYear2digit}`);           // ../09
+        }
         
-        // 3. Rangos cerrados que incluyan el año - CORREGIDO
-        // Generar solo rangos válidos que incluyan nuestro año objetivo
-        for (let startOffset = 1; startOffset <= 3; startOffset++) {
-          for (let endOffset = 1; endOffset <= 3; endOffset++) {
-            const startYearInt = Math.max(0, year2digitInt - startOffset);
-            const endYearInt = Math.min(99, year2digitInt + endOffset);
-            
-            // Solo crear el patrón si forma un rango válido
-            if (startYearInt < endYearInt && startYearInt <= year2digitInt && endYearInt >= year2digitInt) {
-              const startYear2digit = startYearInt.toString().padStart(2, '0');
-              const endYear2digit = endYearInt.toString().padStart(2, '0');
-              yearPatterns.push(`\\(${startYear2digit}/${endYear2digit}\\)`);
+        // 4. RANGOS CERRADOS BIDIRECCIONALES: (XX/YY)
+        // Para 2009, buscar rangos como (05/12), (07/15), etc. que incluyan 2009
+        console.log('📅 [PIPELINE] Generando rangos cerrados...');
+        for (let startYear = Math.max(0, year2digitInt - 8); startYear <= year2digitInt; startYear++) {
+          for (let endYear = year2digitInt; endYear <= Math.min(99, year2digitInt + 8); endYear++) {
+            if (startYear < endYear) { // Solo rangos válidos
+              const startYear2digit = startYear.toString().padStart(2, '0');
+              const endYear2digit = endYear.toString().padStart(2, '0');
+              // Con paréntesis
+              yearPatterns.push(`\\(${startYear2digit}\/${endYear2digit}\\)`); // (07/12)
+              // Sin paréntesis
+              yearPatterns.push(`${startYear2digit}\/${endYear2digit}`);        // 07/12
             }
           }
         }
         
-        console.log('📅 [PIPELINE] Patrones de año generados (antes de validar):', yearPatterns);
+        // 5. FORMATOS ADICIONALES BIDIRECCIONALES
+        console.log('📅 [PIPELINE] Agregando formatos adicionales...');
+        // Inicio de rango
+        yearPatterns.push(`${year2digit}/`);                // 09/ - inicio de rango
+        yearPatterns.push(`\\(${year2digit}/`);             // (09/ - inicio de rango con paréntesis
         
-        // 4. VALIDAR todos los patrones antes de usarlos
+        // Fin de rango  
+        yearPatterns.push(`/${year2digit}`);                // /09 - fin de rango
+        yearPatterns.push(`/${year2digit}\\)`);             // /09) - fin de rango con paréntesis
+        
+        // Rangos con puntos
+        yearPatterns.push(`\\.\\./${year2digit}`);          // ../09
+        yearPatterns.push(`${year2digit}/\\.\\.`);          // 09/..
+        
+        console.log('📅 [PIPELINE] Patrones bidireccionales generados (antes de validar):', yearPatterns.length, 'patrones');
+        console.log('📅 [PIPELINE] Primeros 10 patrones:', yearPatterns.slice(0, 10));
+        
+        // 6. VALIDAR todos los patrones antes de usarlos
         const validYearPatterns = [];
-        yearPatterns.forEach(pattern => {
+        yearPatterns.forEach((pattern, index) => {
           try {
             new RegExp(pattern, 'i'); // Test si el patrón es válido
             validYearPatterns.push(pattern);
-            console.log('✅ [PIPELINE] Patrón válido:', pattern);
+            if (index < 15) { // Solo mostrar los primeros 15 para no saturar el log
+              console.log('✅ [PIPELINE] Patrón válido:', pattern);
+            }
           } catch (error) {
             console.warn('⚠️ [PIPELINE] Patrón regex inválido descartado:', pattern, 'Error:', error.message);
           }
         });
         
-        console.log('📅 [PIPELINE] Patrones de año válidos finales:', validYearPatterns);
+        console.log('📅 [PIPELINE] RESUMEN: Patrones válidos finales:', validYearPatterns.length, 'de', yearPatterns.length);
         
         // Agregar condiciones de año al $elemMatch existente solo si hay patrones válidos
         if (validYearPatterns.length > 0) {
@@ -1183,47 +1139,11 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
             version: { $regex: pattern, $options: 'i' }
           }));
           
-          console.log('📅 [PIPELINE] Condición con año corregida:', JSON.stringify(vehicleCondition, null, 2));
+          console.log('📅 [PIPELINE] Condición bidireccional con año agregada');
+          console.log('📅 [PIPELINE] Total condiciones OR para versión:', validYearPatterns.length);
         } else {
           console.warn('⚠️ [PIPELINE] No se generaron patrones de año válidos, continuando sin filtro de año');
         }
-      }
-      
-      // ===== FUNCIÓN AUXILIAR PARA VERIFICAR SI UN AÑO ESTÁ EN RANGO =====
-      
-      function checkYearInRange(versionString, targetYear) {
-        console.log('📅 [YEAR CHECK] Verificando:', versionString, 'para año', targetYear);
-        
-        // Patrón (08/..) = desde 2008 hasta infinito
-        const openRangeMatch = versionString.match(/\((\d{2})\/\.\.\)/);
-        if (openRangeMatch) {
-          const startYear = parseInt('20' + openRangeMatch[1]);
-          const isInRange = targetYear >= startYear;
-          console.log('📅 [YEAR CHECK] Rango abierto:', startYear, '<=', targetYear, '=', isInRange);
-          return isInRange;
-        }
-        
-        // Patrón (07/12) = desde 2007 hasta 2012  
-        const closedRangeMatch = versionString.match(/\((\d{2})\/(\d{2})\)/);
-        if (closedRangeMatch) {
-          const startYear = parseInt('20' + closedRangeMatch[1]);
-          const endYear = parseInt('20' + closedRangeMatch[2]);
-          const isInRange = targetYear >= startYear && targetYear <= endYear;
-          console.log('📅 [YEAR CHECK] Rango cerrado:', startYear, '<=', targetYear, '<=', endYear, '=', isInRange);
-          return isInRange;
-        }
-        
-        // Año específico
-        const specificYearMatch = versionString.match(/(\d{4})/);
-        if (specificYearMatch) {
-          const versionYear = parseInt(specificYearMatch[1]);
-          const isMatch = targetYear === versionYear;
-          console.log('📅 [YEAR CHECK] Año específico:', versionYear, '=', targetYear, '=', isMatch);
-          return isMatch;
-        }
-        
-        console.log('📅 [YEAR CHECK] No se pudo parsear:', versionString);
-        return false;
       }
       
       matchConditions.aplicaciones = vehicleCondition;
@@ -1287,6 +1207,98 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
   console.log('🏗️ [PIPELINE] Pipeline final:', JSON.stringify(pipeline, null, 2));
   
   return pipeline;
+}
+
+// ===== FUNCIÓN AUXILIAR PARA VERIFICAR SI UN AÑO ESTÁ EN RANGO BIDIRECCIONAL =====
+
+function checkYearInRangeBidirectional(versionString, targetYear) {
+  console.log('📅 [YEAR CHECK BIDIRECTIONAL] Verificando:', versionString, 'para año', targetYear);
+  
+  // Patrón (08/..) = desde 2008 hasta infinito
+  const openRangeForwardMatch = versionString.match(/\(?(\d{2})\/\.\.\)?/);
+  if (openRangeForwardMatch) {
+    const startYear = parseInt('20' + openRangeForwardMatch[1]);
+    const isInRange = targetYear >= startYear;
+    console.log('📅 [YEAR CHECK] Rango abierto hacia adelante:', startYear, '<=', targetYear, '=', isInRange);
+    return isInRange;
+  }
+  
+  // Patrón (../09) = hasta 2009 (hacia atrás)
+  const openRangeBackwardMatch = versionString.match(/\(?\.\.\/?(\d{2})\)?/);
+  if (openRangeBackwardMatch) {
+    const endYear = parseInt('20' + openRangeBackwardMatch[1]);
+    const isInRange = targetYear <= endYear;
+    console.log('📅 [YEAR CHECK] Rango abierto hacia atrás:', targetYear, '<=', endYear, '=', isInRange);
+    return isInRange;
+  }
+  
+  // Patrón (07/12) = desde 2007 hasta 2012  
+  const closedRangeMatch = versionString.match(/\(?(\d{2})\/(\d{2})\)?/);
+  if (closedRangeMatch) {
+    const startYear = parseInt('20' + closedRangeMatch[1]);
+    const endYear = parseInt('20' + closedRangeMatch[2]);
+    const isInRange = targetYear >= startYear && targetYear <= endYear;
+    console.log('📅 [YEAR CHECK] Rango cerrado:', startYear, '<=', targetYear, '<=', endYear, '=', isInRange);
+    return isInRange;
+  }
+  
+  // Año específico (09) o (2009)
+  const specificYearMatch = versionString.match(/\(?(\d{2,4})\)?/);
+  if (specificYearMatch) {
+    const yearStr = specificYearMatch[1];
+    const versionYear = yearStr.length === 2 ? parseInt('20' + yearStr) : parseInt(yearStr);
+    const isMatch = targetYear === versionYear;
+    console.log('📅 [YEAR CHECK] Año específico:', versionYear, '=', targetYear, '=', isMatch);
+    return isMatch;
+  }
+  
+  console.log('📅 [YEAR CHECK] No se pudo parsear:', versionString);
+  return false;
+}
+
+// ===== FUNCIÓN AUXILIAR PARA PROBAR PATRONES DE AÑOS =====
+
+function testYearPatterns() {
+  console.log('🧪 [TEST YEAR PATTERNS] ===== INICIO PRUEBAS =====');
+  
+  const testCases = [
+    // Rangos hacia adelante
+    { version: "(08/..)", targetYear: 2009, expected: true, description: "Rango adelante con paréntesis" },
+    { version: "08/..", targetYear: 2009, expected: true, description: "Rango adelante sin paréntesis" },
+    { version: "(10/..)", targetYear: 2009, expected: false, description: "Rango adelante que no incluye" },
+    
+    // Rangos hacia atrás
+    { version: "(../09)", targetYear: 2009, expected: true, description: "Rango atrás con paréntesis" },
+    { version: "../09", targetYear: 2009, expected: true, description: "Rango atrás sin paréntesis" },
+    { version: "(../08)", targetYear: 2009, expected: false, description: "Rango atrás que no incluye" },
+    
+    // Rangos cerrados
+    { version: "(07/12)", targetYear: 2009, expected: true, description: "Rango cerrado que incluye" },
+    { version: "07/12", targetYear: 2009, expected: true, description: "Rango cerrado sin paréntesis" },
+    { version: "(10/15)", targetYear: 2009, expected: false, description: "Rango cerrado que no incluye" },
+    
+    // Años específicos
+    { version: "(09)", targetYear: 2009, expected: true, description: "Año específico 2 dígitos" },
+    { version: "(2009)", targetYear: 2009, expected: true, description: "Año específico 4 dígitos" },
+    { version: "(08)", targetYear: 2009, expected: false, description: "Año específico diferente" }
+  ];
+  
+  console.log('🧪 [TEST YEAR PATTERNS] Ejecutando', testCases.length, 'casos de prueba...');
+  
+  testCases.forEach((testCase, index) => {
+    const result = checkYearInRangeBidirectional(testCase.version, testCase.targetYear);
+    const passed = result === testCase.expected;
+    
+    console.log(`🧪 [TEST ${index + 1}] ${testCase.description}:`);
+    console.log(`    Versión: ${testCase.version} | Año: ${testCase.targetYear}`);
+    console.log(`    Resultado: ${result} | Esperado: ${testCase.expected} | ${passed ? '✅ PASS' : '❌ FAIL'}`);
+    
+    if (!passed) {
+      console.error(`❌ [FAIL] Test ${index + 1} falló: ${testCase.description}`);
+    }
+  });
+  
+  console.log('🧪 [TEST YEAR PATTERNS] ===== FIN PRUEBAS =====');
 }
 
 function getValidCategoriesForProduct(product) {
@@ -1436,6 +1448,7 @@ function mapPositionForSearch(position) {
   
   return mappedPosition;
 }
+
 router.get('/test-parser', async (req, res) => {
   const testQuery = 'amortiguador trasero corolla 2009';
   const parsed = parseNaturalQuery(testQuery);
