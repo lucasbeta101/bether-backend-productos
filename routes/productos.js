@@ -778,7 +778,7 @@ router.get('/metadatos-busqueda', async (req, res) => {
   }
 });
 
-// ===== FUNCIONES AUXILIARES =====
+
 
 // 🔤 NORMALIZAR TEXTO
 function normalizeText(text) {
@@ -799,6 +799,18 @@ function parseNaturalQuery(query) {
 
   // ✅ NUEVOS PATRONES ESPECÍFICOS PARA TUS CASOS
   const enhancedPatterns = [
+    {
+      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+(delantero|trasero|izquierdo|derecho|izquierda|del|pos|izq|der)\s+([a-z]+)\s+([a-z0-9]+)$/i,
+      extract: (match) => ({
+        product: match[1].trim(),
+        position: match[2].trim(),
+        brand: match[3].trim(),
+        model: match[4].trim(),
+        year: null, // El año es explícitamente nulo
+        isStructured: true,
+        searchType: 'ultra_specific_no_year' // Un nuevo tipo para debugging
+      })
+    },
     {
       pattern: /^(amortiguador|amortiguadores|pastilla|pastillas|disco|discos|embrague|embragues|rotula|rotulas|rótula|rótulas|brazo|brazos|extremo|extremos|bieleta|bieletas|biela|bielas|axial|axiales|homocinetica|homocinéticas|homocinética|junta|juntas|rodamiento|rodamientos|ruleman|rulemanes|maza|mazas|buje|bujes|semieje|semiejes|eje|ejes|soporte|soportes|parrilla|parrillas|cazoleta|cazoletas|barra|barras|caja|cajas|bomba|bombas|freno|frenos|clutch|campana|campanas|suspension|suspensión|neumática|neumatica)\s+(del|de|para|de\s+la|del\s+auto|de\s+mi|para\s+el|para\s+mi)\s+([a-z]+)\s+([a-z0-9]+(?:\s+[a-z0-9]+)*)(?:\s+(delantero|delanteros|trasero|traseros|anterior|posterior|frontal|del|pos|izquierdo|derecho|izq|der|superior|inferior|sup|inf))?$/i,
       extract: (match) => ({
@@ -1010,20 +1022,35 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
   if (parsedQuery.freeText) {
     console.log('📝 [PIPELINE] Tipo: BÚSQUEDA LIBRE');
     const searchText = parsedQuery.freeText.trim();
-    const escapedSearchText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     
-    const searchConditions = [
-      { codigo: { $regex: escapedSearchText, $options: 'i' } },
-      { nombre: { $regex: escapedSearchText, $options: 'i' } },
-      { categoria: { $regex: escapedSearchText, $options: 'i' } },
-      { "aplicaciones.marca": { $regex: escapedSearchText, $options: 'i' } },
-      { "aplicaciones.modelo": { $regex: escapedSearchText, $options: 'i' } }
-    ];
+    // --- INICIO DEL CAMBIO ---
+
+    // 1. Dividir la query en palabras clave
+    const keywords = searchText.split(' ').filter(k => k.length > 0);
     
-    console.log('📝 [PIPELINE] Condiciones de búsqueda libre:', searchConditions.length);
-    pipeline.push({ $match: { $or: searchConditions } });
+    // 2. Crear una condición de regex para cada palabra clave
+    const keywordConditions = keywords.map(word => {
+        const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return {
+            $or: [
+                { codigo: { $regex: escapedWord, $options: 'i' } },
+                { nombre: { $regex: escapedWord, $options: 'i' } },
+                { categoria: { $regex: escapedWord, $options: 'i' } },
+                { "aplicaciones.marca": { $regex: escapedWord, $options: 'i' } },
+                { "aplicaciones.modelo": { $regex: escapedWord, $options: 'i' } },
+                { "detalles_tecnicos.Posición de la pieza": { $regex: escapedWord, $options: 'i' } }
+            ]
+        };
+    });
+
+    // 3. Usar $and para asegurar que todas las palabras clave estén presentes en el documento
+    if (keywordConditions.length > 0) {
+        pipeline.push({ $match: { $and: keywordConditions } });
+        console.log(`📝 [PIPELINE] Condiciones de búsqueda libre (mejorada): ${keywordConditions.length} palabras clave`);
+    }
     
-  } else if (parsedQuery.isStructured) {
+  } 
+  else if (parsedQuery.isStructured) {
     console.log('🎯 [PIPELINE] Tipo: BÚSQUEDA ESTRUCTURADA');
     console.log('📋 [PIPELINE] Detalles:', {
       product: parsedQuery.product,
