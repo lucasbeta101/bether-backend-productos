@@ -627,7 +627,7 @@ router.get('/filtros/:tipo', async (req, res) => {
     });
   }
 });
-module.exports = router;
+
 
 
 router.get('/busqueda', async (req, res) => {
@@ -1951,3 +1951,4 @@ router.get('/test-pipeline-detailed', async (req, res) => {
     });
   }
 });
+module.exports = router;
