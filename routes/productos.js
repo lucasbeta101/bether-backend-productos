@@ -74,7 +74,371 @@ const CATEGORIAS = {
   "Otros": ["Otros"]
 };
 
-// ===== RUTAS =====
+
+function normalizeText(text) {
+  if (!text) return '';
+  return text.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w\s\/]/g, ' ').replace(/\s+/g, ' ').toLowerCase().trim();
+}
+
+function getValidCategoriesForProduct(product) {
+  const categoryMap = {
+      'amortiguador': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
+      'pastilla': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+      'freno': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C', 'Discos y Camp CORVEN', 'Discos y Camp HF'],
+      'disco': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
+      'cazoleta': ['Cazoletas CORVEN', 'Cazoletas SADAR'],
+      'bieleta': ['Bieletas CORVEN', 'Bieletas SADAR'],
+      'rotula': ['Rotulas CORVEN', 'Rotulas SADAR'],
+      'embrague': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
+      'brazo': ['Brazos Susp CORVEN', 'Brazos Susp SADAR'],
+      'extremo': ['Extremos CORVEN', 'Extremos SADAR'],
+      'axial': ['Axiales CORVEN', 'Axiales SADAR'],
+      'homocinetica': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
+      'rodamiento': ['Rodamientos CORVEN', 'Rodamientos SADAR'],
+      'maza': ['Mazas CORVEN', 'Mazas HF'],
+      'semieje': ['Semiejes CORVEN'],
+      'soporte': ['Soporte Motor CORVEN'],
+      'parrilla': ['Parrillas CORVEN', 'Parrillas SADAR'],
+      'barra': ['Barras HD SADAR'],
+      'caja': ['Cajas Mec CORVEN', 'Cajas Hid CORVEN'],
+      'bomba': ['Bombas Hid CORVEN'],
+      'suspension': ['Susp Neumática SADAR', 'Amort CORVEN', 'Cazoletas CORVEN', 'Parrillas CORVEN'],
+  };
+  const normalizedProduct = normalizeText(product).replace(/s$/, '');
+  return categoryMap[normalizedProduct] || [];
+}
+
+function buildSearchPipelineWithLogs(parsedQuery, limit, offset) {
+  console.log('🔧 [PIPELINE DEBUG] Construyendo pipeline con logs detallados...');
+  console.log('📋 [PIPELINE DEBUG] Query recibida:', JSON.stringify(parsedQuery, null, 2));
+  
+  let matchConditions = { tiene_precio_valido: true };
+  
+  // Log inicial
+  console.log('🏁 [PIPELINE DEBUG] Condiciones iniciales:', JSON.stringify(matchConditions, null, 2));
+
+  if (parsedQuery.isStructured) {
+    console.log('🎯 [PIPELINE DEBUG] Búsqueda estructurada detectada');
+    
+    // Producto/Categoría
+    if (parsedQuery.product) {
+      console.log(`🔍 [PIPELINE DEBUG] Procesando producto: "${parsedQuery.product}"`);
+      const validCategories = getValidCategoriesForProduct(parsedQuery.product);
+      console.log(`📋 [PIPELINE DEBUG] Categorías válidas:`, validCategories);
+      
+      if (validCategories.length > 0) {
+        matchConditions.categoria = { $in: validCategories };
+        console.log(`✅ [PIPELINE DEBUG] Filtro de categoría aplicado:`, matchConditions.categoria);
+      } else {
+        console.log(`⚠️ [PIPELINE DEBUG] No se encontraron categorías para "${parsedQuery.product}"`);
+      }
+    }
+    
+    // Posición
+    if (parsedQuery.position) {
+      console.log(`🔍 [PIPELINE DEBUG] Procesando posición: "${parsedQuery.position}"`);
+      const mappedPosition = mapPositionForSearch(parsedQuery.position);
+      console.log(`📋 [PIPELINE DEBUG] Posición mapeada: "${mappedPosition}"`);
+      
+      matchConditions["detalles_tecnicos.Posición de la pieza"] = { $regex: mappedPosition, $options: 'i' };
+      console.log(`✅ [PIPELINE DEBUG] Filtro de posición aplicado:`, matchConditions["detalles_tecnicos.Posición de la pieza"]);
+    }
+    
+    // Aplicaciones de vehículo
+    const elemMatchAndConditions = [];
+    
+    if (parsedQuery.vehicleTerms && parsedQuery.vehicleTerms.length > 0) {
+      console.log(`🚗 [PIPELINE DEBUG] Procesando términos de vehículo:`, parsedQuery.vehicleTerms);
+      
+      const vehicleConditions = parsedQuery.vehicleTerms.map(term => {
+        console.log(`🔍 [PIPELINE DEBUG] Creando condición para término: "${term}"`);
+        return {
+          $or: [
+            { "marca": { $regex: term, $options: 'i' } }, 
+            { "modelo": { $regex: term, $options: 'i' } }
+          ]
+        };
+      });
+      
+      elemMatchAndConditions.push(...vehicleConditions);
+      console.log(`✅ [PIPELINE DEBUG] Condiciones de vehículo agregadas:`, vehicleConditions.length);
+    }
+    
+    // Año
+    if (parsedQuery.year) {
+      console.log(`📅 [PIPELINE DEBUG] Procesando año: "${parsedQuery.year}"`);
+      const yearRegex = `(${parsedQuery.year}|${parsedQuery.year.slice(-2)})`;
+      console.log(`📅 [PIPELINE DEBUG] Regex de año: "${yearRegex}"`);
+      
+      elemMatchAndConditions.push({ 
+        'version': { $regex: yearRegex, $options: 'i' } 
+      });
+      console.log(`✅ [PIPELINE DEBUG] Condición de año agregada`);
+    }
+    
+    // Aplicar condiciones de aplicaciones
+    if (elemMatchAndConditions.length > 0) {
+      matchConditions.aplicaciones = { 
+        $elemMatch: { $and: elemMatchAndConditions } 
+      };
+      console.log(`✅ [PIPELINE DEBUG] Filtro de aplicaciones aplicado con ${elemMatchAndConditions.length} condiciones`);
+      console.log(`📋 [PIPELINE DEBUG] Condiciones completas:`, JSON.stringify(elemMatchAndConditions, null, 2));
+    }
+    
+  } else {
+    console.log('🔍 [PIPELINE DEBUG] Búsqueda no estructurada - usando fallback');
+    
+    // Fallback para búsqueda no estructurada
+    const freeText = parsedQuery.freeText || "";
+    const keywords = normalizeText(freeText).split(' ').filter(k => k.length > 0);
+    
+    console.log(`🔍 [PIPELINE DEBUG] Texto libre: "${freeText}"`);
+    console.log(`🔍 [PIPELINE DEBUG] Keywords extraídas:`, keywords);
+    
+    if (keywords.length > 0) {
+      matchConditions.$and = keywords.map(word => {
+        console.log(`🔍 [PIPELINE DEBUG] Creando condición OR para: "${word}"`);
+        return {
+          $or: [
+            { codigo: { $regex: word, $options: 'i' } },
+            { nombre: { $regex: word, $options: 'i' } },
+            { "aplicaciones.marca": { $regex: word, $options: 'i' } },
+            { "aplicaciones.modelo": { $regex: word, $options: 'i' } }
+          ]
+        };
+      });
+      console.log(`✅ [PIPELINE DEBUG] ${keywords.length} condiciones de texto libre aplicadas`);
+    }
+  }
+
+  console.log('🚨 [PIPELINE DEBUG] CONSULTA FINAL $match:', JSON.stringify(matchConditions, null, 2));
+  
+  // Construir pipeline
+  const pipeline = [
+    { $match: matchConditions },
+    { $sort: { codigo: 1 } }
+  ];
+
+  if (offset > 0) {
+    pipeline.push({ $skip: offset });
+    console.log(`⏭️ [PIPELINE DEBUG] Skip agregado: ${offset}`);
+  }
+
+  pipeline.push({ $limit: limit });
+  console.log(`📏 [PIPELINE DEBUG] Limit agregado: ${limit}`);
+  
+  pipeline.push({ $project: { _id: 0 } });
+  console.log(`📋 [PIPELINE DEBUG] Projection agregada`);
+
+  console.log(`🏗️ [PIPELINE DEBUG] Pipeline final con ${pipeline.length} etapas`);
+  console.log(`📋 [PIPELINE DEBUG] Pipeline completo:`, JSON.stringify(pipeline, null, 2));
+
+  return pipeline;
+}
+// ===== FUNCIÓN AUXILIAR PARA VERIFICAR SI UN AÑO ESTÁ EN RANGO BIDIRECCIONAL =====
+
+function checkYearInRangeBidirectional(versionString, targetYear) {
+  console.log('📅 [YEAR CHECK BIDIRECTIONAL] Verificando:', versionString, 'para año', targetYear);
+  
+  if (!versionString || !targetYear) return false;
+  
+  // Patrón (08/..) = desde 2008 hasta infinito
+  const openRangeForwardMatch = versionString.match(/\(?(\d{2})\/\.\.\)?/);
+  if (openRangeForwardMatch) {
+    const startYear = parseInt('20' + openRangeForwardMatch[1]);
+    const isInRange = targetYear >= startYear;
+    console.log('📅 [YEAR CHECK] Rango abierto hacia adelante:', startYear, '<=', targetYear, '=', isInRange);
+    return isInRange;
+  }
+  
+  // Patrón (../09) = hasta 2009 (hacia atrás)
+  const openRangeBackwardMatch = versionString.match(/\(?\.\.\/?(\d{2})\)?/);
+  if (openRangeBackwardMatch) {
+    const endYear = parseInt('20' + openRangeBackwardMatch[1]);
+    const isInRange = targetYear <= endYear;
+    console.log('📅 [YEAR CHECK] Rango abierto hacia atrás:', targetYear, '<=', endYear, '=', isInRange);
+    return isInRange;
+  }
+  
+  // Patrón (07/12) = desde 2007 hasta 2012  
+  const closedRangeMatch = versionString.match(/\(?(\d{2})\/(\d{2})\)?/);
+  if (closedRangeMatch) {
+    const startYear = parseInt('20' + closedRangeMatch[1]);
+    const endYear = parseInt('20' + closedRangeMatch[2]);
+    const isInRange = targetYear >= startYear && targetYear <= endYear;
+    console.log('📅 [YEAR CHECK] Rango cerrado:', startYear, '<=', targetYear, '<=', endYear, '=', isInRange);
+    return isInRange;
+  }
+  
+  // Año específico (09) o (2009)
+  const specificYearMatch = versionString.match(/\(?(\d{2,4})\)?/);
+  if (specificYearMatch) {
+    const yearStr = specificYearMatch[1];
+    const versionYear = yearStr.length === 2 ? parseInt('20' + yearStr) : parseInt(yearStr);
+    const isMatch = targetYear === versionYear;
+    console.log('📅 [YEAR CHECK] Año específico:', versionYear, '=', targetYear, '=', isMatch);
+    return isMatch;
+  }
+  
+  console.log('📅 [YEAR CHECK] No se pudo parsear:', versionString);
+  return false;
+}
+
+
+function getValidCategoriesForProductEnhanced(product) {
+  const categoryMap = {
+    // Amortiguadores - todas las variantes
+    'amortiguador': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
+    'amortiguadores': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
+    'amort': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
+    
+    // Pastillas de freno
+    'pastilla': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+    'pastillas': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+    'freno': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C', 'Discos y Camp CORVEN', 'Discos y Camp HF'],
+    'frenos': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C', 'Discos y Camp CORVEN', 'Discos y Camp HF'],
+    
+    // Discos y campanas
+    'disco': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
+    'discos': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
+    'campana': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
+    'campanas': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
+    
+    // Cazoletas
+    'cazoleta': ['Cazoletas CORVEN', 'Cazoletas SADAR'],
+    'cazoletas': ['Cazoletas CORVEN', 'Cazoletas SADAR'],
+    
+    // Bieletas
+    'bieleta': ['Bieletas CORVEN', 'Bieletas SADAR'],
+    'bieletas': ['Bieletas CORVEN', 'Bieletas SADAR'],
+    'biela': ['Bieletas CORVEN', 'Bieletas SADAR'],
+    'bielas': ['Bieletas CORVEN', 'Bieletas SADAR'],
+    
+    // Rótulas
+    'rotula': ['Rotulas CORVEN', 'Rotulas SADAR'],
+    'rotulas': ['Rotulas CORVEN', 'Rotulas SADAR'],
+    'rótula': ['Rotulas CORVEN', 'Rotulas SADAR'],
+    'rótulas': ['Rotulas CORVEN', 'Rotulas SADAR'],
+    
+    // Embragues
+    'embrague': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
+    'embragues': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
+    'clutch': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
+    
+    // Brazos
+    'brazo': ['Brazos Susp CORVEN', 'Brazos Susp SADAR'],
+    'brazos': ['Brazos Susp CORVEN', 'Brazos Susp SADAR'],
+    
+    // Extremos
+    'extremo': ['Extremos CORVEN', 'Extremos SADAR'],
+    'extremos': ['Extremos CORVEN', 'Extremos SADAR'],
+    
+    // Axiales
+    'axial': ['Axiales CORVEN', 'Axiales SADAR'],
+    'axiales': ['Axiales CORVEN', 'Axiales SADAR'],
+    
+    // Homocinéticas
+    'homocinetica': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
+    'homocinéticas': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
+    'homocinética': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
+    'junta': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
+    'juntas': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
+    
+    // Rodamientos
+    'rodamiento': ['Rodamientos CORVEN', 'Rodamientos SADAR'],
+    'rodamientos': ['Rodamientos CORVEN', 'Rodamientos SADAR'],
+    'ruleman': ['Rodamientos CORVEN', 'Rodamientos SADAR'],
+    'rulemanes': ['Rodamientos CORVEN', 'Rodamientos SADAR'],
+    
+    // Mazas
+    'maza': ['Mazas CORVEN', 'Mazas HF'],
+    'mazas': ['Mazas CORVEN', 'Mazas HF'],
+    'buje': ['Mazas CORVEN', 'Mazas HF'],
+    'bujes': ['Mazas CORVEN', 'Mazas HF'],
+    
+    // Semiejes
+    'semieje': ['Semiejes CORVEN'],
+    'semiejes': ['Semiejes CORVEN'],
+    'eje': ['Semiejes CORVEN'],
+    'ejes': ['Semiejes CORVEN'],
+    
+    // Soportes
+    'soporte': ['Soporte Motor CORVEN'],
+    'soportes': ['Soporte Motor CORVEN'],
+    
+    // Parrillas
+    'parrilla': ['Parrillas CORVEN', 'Parrillas SADAR'],
+    'parrillas': ['Parrillas CORVEN', 'Parrillas SADAR'],
+    
+    // Barras
+    'barra': ['Barras HD SADAR'],
+    'barras': ['Barras HD SADAR'],
+    
+    // Cajas y bombas
+    'caja': ['Cajas Mec CORVEN', 'Cajas Hid CORVEN'],
+    'cajas': ['Cajas Mec CORVEN', 'Cajas Hid CORVEN'],
+    'bomba': ['Bombas Hid CORVEN'],
+    'bombas': ['Bombas Hid CORVEN'],
+    
+    // Suspensión
+    'suspension': ['Susp Neumática SADAR'],
+    'suspensión': ['Susp Neumática SADAR'],
+    'neumática': ['Susp Neumática SADAR'],
+    'neumatica': ['Susp Neumática SADAR']
+  };
+  
+  const normalizedProduct = normalizeText(product).toLowerCase().trim();
+  return categoryMap[normalizedProduct] || [];
+}
+
+function mapPositionForSearch(position) {
+  const positionMap = {
+      'delantero': 'Delantero', 'del': 'Delantero',
+      'trasero': 'Trasero', 'pos': 'Trasero',
+      'izquierdo': 'Izquierdo', 'izq': 'Izquierdo',
+      'derecho': 'Derecho', 'der': 'Derecho',
+      'superior': 'Superior', 'sup': 'Superior',
+      'inferior': 'Inferior', 'inf': 'Inferior',
+  };
+  const normalizedPosition = normalizeText(position);
+  return positionMap[normalizedPosition] || position;
+}
+
+function parseNaturalQuery(query) {
+  console.log('🧐 [Parser v5] Iniciando parseo para:', query);
+  const STOP_WORDS = ['para', 'de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'con', 'mi', 'auto'];
+  const productKeywords = ['amortiguador', 'pastilla', 'freno', 'disco', 'cazoleta', 'bieleta', 'rotula', 'embrague', 'brazo', 'extremo', 'axial', 'homocinetica', 'rodamiento', 'maza', 'semieje', 'soporte', 'parrilla', 'barra', 'caja', 'bomba', 'suspension'];
+  const positionKeywords = ['delantero', 'trasero', 'izquierdo', 'derecho', 'superior', 'inferior', 'del', 'pos', 'izq', 'der', 'sup', 'inf'];
+  
+  const normalized = normalizeText(query);
+  const words = normalized.split(' ').filter(word => !STOP_WORDS.includes(word) && word.length > 1);
+  
+  const result = { product: null, position: null, year: null, vehicleTerms: [], isStructured: false, freeText: query };
+
+  const remainingWords = [];
+  for (const word of words) {
+      if (!result.product && productKeywords.includes(word.replace(/s$/, ''))) {
+          result.product = word.replace(/s$/, '');
+      } else if (!result.position && positionKeywords.includes(word)) {
+          result.position = word;
+      } else if (!result.year && /^\d{4}$/.test(word)) {
+          result.year = word;
+      } else if (!result.year && /^\d{2}$/.test(word)) {
+          const yearNum = parseInt(word, 10);
+          result.year = yearNum > 30 ? (1900 + yearNum).toString() : (2000 + yearNum).toString();
+      } else {
+          remainingWords.push(word);
+      }
+  }
+
+  result.vehicleTerms = remainingWords;
+  if (result.product || result.position || result.year || result.vehicleTerms.length > 0) {
+      result.isStructured = true;
+  }
+  
+  console.log('🧐 [Parser v5] Resultado:', result);
+  return result;
+}
 
 // 🏥 PING - Verificar conexión MongoDB
 router.get('/ping', async (req, res) => {
@@ -629,7 +993,6 @@ router.get('/filtros/:tipo', async (req, res) => {
 });
 
 
-
 router.get('/busqueda', async (req, res) => {
   try {
     const { 
@@ -981,739 +1344,6 @@ router.get('/metadatos-busqueda', async (req, res) => {
 });
 
 
-
-// 🔤 NORMALIZAR TEXTO
-function normalizeText(text) {
-  if (!text) return '';
-  return text
-    .toString()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Quitar tildes
-    .replace(/[^\w\s\/]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .toLowerCase()
-    .trim();
-}
-
-function parseNaturalQuery(query) {
-  const normalized = normalizeText(query);
-  console.log('🔍 [BACKEND MEJORADO] Parseando query:', normalized);
-
-  // ✅ NUEVOS PATRONES ESPECÍFICOS PARA TUS CASOS
-  const enhancedPatterns = [
-    {
-      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+(delantero|trasero|izquierdo|derecho|izquierda|del|pos|izq|der)\s+([a-z]+)\s+([a-z0-9]+)$/i,
-      extract: (match) => ({
-        product: match[1].trim(),
-        position: match[2].trim(),
-        brand: match[3].trim(),
-        model: match[4].trim(),
-        year: null, // El año es explícitamente nulo
-        isStructured: true,
-        searchType: 'ultra_specific_no_year' // Un nuevo tipo para debugging
-      })
-    },
-    {
-      pattern: /^(amortiguador|amortiguadores|pastilla|pastillas|disco|discos|embrague|embragues|rotula|rotulas|rótula|rótulas|brazo|brazos|extremo|extremos|bieleta|bieletas|biela|bielas|axial|axiales|homocinetica|homocinéticas|homocinética|junta|juntas|rodamiento|rodamientos|ruleman|rulemanes|maza|mazas|buje|bujes|semieje|semiejes|eje|ejes|soporte|soportes|parrilla|parrillas|cazoleta|cazoletas|barra|barras|caja|cajas|bomba|bombas|freno|frenos|clutch|campana|campanas|suspension|suspensión|neumática|neumatica)\s+(del|de|para|de\s+la|del\s+auto|de\s+mi|para\s+el|para\s+mi)\s+([a-z]+)\s+([a-z0-9]+(?:\s+[a-z0-9]+)*)(?:\s+(delantero|delanteros|trasero|traseros|anterior|posterior|frontal|del|pos|izquierdo|derecho|izq|der|superior|inferior|sup|inf))?$/i,
-      extract: (match) => ({
-        product: match[1].trim(),
-        connector: match[2].trim(), // Para debugging
-        brand: match[3].trim(),
-        model: match[4].trim(),
-        position: match[5]?.trim() || null,
-        isStructured: true,
-        searchType: 'producto_conector_marca_modelo'
-      })
-    },
-    
-    // ✅ PATRÓN CON POSICIÓN ANTES DEL CONECTOR
-    {
-      pattern: /^(amortiguador|amortiguadores|pastilla|pastillas|disco|discos|embrague|embragues|rotula|rotulas|rótula|rótulas|brazo|brazos|extremo|extremos|bieleta|bieletas|biela|bielas|axial|axiales|homocinetica|homocinéticas|homocinética|junta|juntas|rodamiento|rodamientos|ruleman|rulemanes|maza|mazas|buje|bujes|semieje|semiejes|eje|ejes|soporte|soportes|parrilla|parrillas|cazoleta|cazoletas|barra|barras|caja|cajas|bomba|bombas|freno|frenos|clutch|campana|campanas|suspension|suspensión|neumática|neumatica)\s+(delantero|delanteros|trasero|traseros|anterior|posterior|frontal|del|pos|izquierdo|derecho|izq|der|superior|inferior|sup|inf)\s+(del|de|para|de\s+la|del\s+auto|de\s+mi|para\s+el|para\s+mi)\s+([a-z]+)\s+([a-z0-9]+(?:\s+[a-z0-9]+)*)$/i,
-      extract: (match) => ({
-        product: match[1].trim(),
-        position: match[2].trim(),
-        connector: match[3].trim(), // Para debugging
-        brand: match[4].trim(),
-        model: match[5].trim(),
-        isStructured: true,
-        searchType: 'producto_posicion_conector_marca_modelo'
-      })
-    },
-    {
-      pattern: /^(necesito|busco|quiero|preciso)\s+(amortiguador|pastillas?|discos?|bieletas?|rotulas?|brazo|extremo)\s+([a-z]+)\s+([a-z0-9]+)$/i,
-      extract: (match) => ({
-        intent: match[1].trim(), // "necesito", "busco", etc.
-        product: match[2].trim(),
-        brand: match[3].trim(),
-        model: match[4].trim(),
-        isStructured: true,
-        searchType: 'busqueda_informal'
-      })
-    },
-    // "amortiguador trasero corolla 2009" - PRODUCTO POSICIÓN MODELO AÑO
-    {
-      pattern: /^(amortiguador|amortiguadores|pastilla|pastillas|disco|discos|embrague|embragues|rotula|rotulas|brazo|brazos|extremo|extremos|bieleta|bieletas|axial|axiales|homocinetica|homocinéticas|rodamiento|rodamientos|maza|mazas|semieje|semiejes|soporte|soportes|parrilla|parrillas|cazoleta|cazoletas|barra|barras|caja|cajas|bomba|bombas)\s+(delantero|delanteros|trasero|traseros|anterior|posterior|del|pos|izq|der|izquierdo|derecho|superior|inferior)\s+([a-z0-9]+)\s+(\d{4})$/i,
-      extract: (match) => ({
-        product: match[1].trim(),
-        position: match[2].trim(),
-        model: match[3].trim(),
-        year: match[4].trim(),
-        isStructured: true,
-        searchType: 'producto_posicion_modelo_año'
-      })
-    },
-
-    // "pastillas de freno hilux 2016" - PRODUCTO COMPLEJO MODELO AÑO
-    {
-      pattern: /^(pastillas?\s+de\s+freno|discos?\s+de\s+freno|amortiguadores?|rotulas?|bieletas?|extremos?|brazos?\s+de\s+suspension)\s+([a-z0-9]+)\s+(\d{4})$/i,
-      extract: (match) => ({
-        product: normalizeComplexProduct(match[1].trim()),
-        model: match[2].trim(),
-        year: match[3].trim(),
-        isStructured: true,
-        searchType: 'producto_complejo_modelo_año'
-      })
-    },
-
-    // "disco de freno delantera peugeot 308 2018" - PRODUCTO COMPLEJO POSICIÓN MARCA MODELO AÑO
-    {
-      pattern: /^(pastillas?\s+de\s+freno|discos?\s+de\s+freno|amortiguadores?|rotulas?|bieletas?|extremos?)\s+(delantero|delanteros|trasero|traseros|delantera|delanteras|trasera|traseras|del|pos)\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{4})$/i,
-      extract: (match) => ({
-        product: normalizeComplexProduct(match[1].trim()),
-        position: match[2].trim(),
-        brand: match[3].trim(),
-        model: match[4].trim(),
-        year: match[5].trim(),
-        isStructured: true,
-        searchType: 'producto_complejo_posicion_marca_modelo_año'
-      })
-    },
-
-    // "pastillas hilux" - PRODUCTO MODELO (sin año)
-    {
-      pattern: /^(amortiguador|amortiguadores|pastilla|pastillas|disco|discos|embrague|embragues|rotula|rotulas|brazo|brazos|extremo|extremos|bieleta|bieletas)\s+([a-z0-9]+)$/i,
-      extract: (match) => ({
-        product: match[1].trim(),
-        model: match[2].trim(),
-        isStructured: true,
-        searchType: 'producto_modelo_simple'
-      })
-    },
-
-    // "corolla 2009" - SOLO MODELO Y AÑO
-    {
-      pattern: /^([a-z0-9]+)\s+(\d{4})$/i,
-      extract: (match) => ({
-        model: match[1].trim(),
-        year: match[2].trim(),
-        isStructured: true,
-        searchType: 'solo_modelo_año'
-      })
-    },
-
-    
-    // "bieleta fiat 500 2009 izquierda y derecha"
-    {
-      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})\s+(izquierda\s+y\s+derecha|izq\s+y\s+der|bilateral|ambos\s+lados|par)$/i,
-      extract: (match) => ({
-        product: match[1].trim(),
-        brand: match[2].trim(),
-        model: match[3].trim(),
-        year: match[4].trim(),
-        position: 'ambos_lados',
-        isStructured: true,
-        searchType: 'ultra_specific_bilateral'
-      })
-    },
-
-    // "bieleta izquierda fiat 500 2009"
-    {
-      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+(delantero|trasero|izquierdo|derecho|izquierda|del|pos|izq|der)\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})$/i,
-      extract: (match) => ({
-        product: match[1].trim(),
-        position: match[2].trim(),
-        brand: match[3].trim(),
-        model: match[4].trim(),
-        year: match[5].trim(),
-        isStructured: true,
-        searchType: 'ultra_specific_position_first'
-      })
-    },
-
-    // "bieleta fiat 500 2009"
-    {
-      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})$/i,
-      extract: (match) => ({
-        product: match[1].trim(),
-        brand: match[2].trim(),
-        model: match[3].trim(),
-        year: match[4].trim(),
-        isStructured: true,
-        searchType: 'ultra_specific_simple'
-      })
-    },
-
-    // PATRONES EXISTENTES con "para"
-    {
-      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+(delantero|trasero|del|pos|izq|der|superior|inferior)\s+para\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})\s+([a-z0-9]+)$/i,
-      extract: (match) => ({
-        product: match[1].trim(),
-        position: match[2].trim(),
-        brand: match[3].trim(),
-        model: match[4].trim(),
-        year: match[5].trim(),
-        version: match[6].trim(),
-        isStructured: true,
-        searchType: 'ultra_specific_perfect'
-      })
-    },
-    
-    {
-      pattern: /^(amortiguador|pastilla|disco|bieleta|rotula|cazoleta|embrague|brazo|extremo|axial|homocinetica|rodamiento|maza|semieje|soporte|parrilla|barra|caja|bomba)\s+para\s+([a-z]+)\s+([a-z0-9]+)\s+(\d{2,4})\s+([a-z0-9]+)$/i,
-      extract: (match) => ({
-        product: match[1].trim(),
-        brand: match[2].trim(),
-        model: match[3].trim(),
-        year: match[4].trim(),
-        version: match[5].trim(),
-        isStructured: true,
-        searchType: 'specific_with_para'
-      })
-    }
-  ];
-
-  // ✅ PROBAR PATRONES MEJORADOS PRIMERO
-  for (const pattern of enhancedPatterns) {
-    const match = normalized.match(pattern.pattern);
-    if (match) {
-      const parsed = pattern.extract(match);
-      console.log('✅ [BACKEND] Patrón mejorado encontrado:', parsed);
-      return parsed;
-    }
-  }
-
-  console.log('🔍 [BACKEND] Usando búsqueda libre para:', normalized);
-  return { freeText: normalized };
-}
-
-function normalizeComplexProduct(productName) {
-  const productMap = {
-    'pastillas de freno': 'pastilla',
-    'pastilla de freno': 'pastilla',
-    'discos de freno': 'disco',
-    'disco de freno': 'disco',
-    'brazos de suspension': 'brazo',
-    'brazo de suspension': 'brazo',
-    'amortiguadores': 'amortiguador'
-  };
-  
-  const normalized = productName.toLowerCase().trim();
-  return productMap[normalized] || productName;
-}
-
-
-
-// ===== FUNCIÓN buildSearchPipeline COMPLETA Y MEJORADA =====
-
-function buildSearchPipeline(parsedQuery, limit, offset) {
-  const pipeline = [];
-  
-  console.log('🔧 [PIPELINE] ===== INICIO CONSTRUCCIÓN PIPELINE =====');
-  console.log('🔧 [PIPELINE] Query recibida:', JSON.stringify(parsedQuery, null, 2));
-  
-  if (parsedQuery.freeText) {
-    console.log('📝 [PIPELINE] Tipo: BÚSQUEDA LIBRE');
-    const searchText = parsedQuery.freeText.trim();
-    
-    // --- INICIO DEL CAMBIO ---
-
-    // 1. Dividir la query en palabras clave
-    const keywords = searchText.split(' ').filter(k => k.length > 0);
-    
-    // 2. Crear una condición de regex para cada palabra clave
-    const keywordConditions = keywords.map(word => {
-        const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        return {
-            $or: [
-                { codigo: { $regex: escapedWord, $options: 'i' } },
-                { nombre: { $regex: escapedWord, $options: 'i' } },
-                { categoria: { $regex: escapedWord, $options: 'i' } },
-                { "aplicaciones.marca": { $regex: escapedWord, $options: 'i' } },
-                { "aplicaciones.modelo": { $regex: escapedWord, $options: 'i' } },
-                { "detalles_tecnicos.Posición de la pieza": { $regex: escapedWord, $options: 'i' } }
-            ]
-        };
-    });
-
-    // 3. Usar $and para asegurar que todas las palabras clave estén presentes en el documento
-    if (keywordConditions.length > 0) {
-        pipeline.push({ $match: { $and: keywordConditions } });
-        console.log(`📝 [PIPELINE] Condiciones de búsqueda libre (mejorada): ${keywordConditions.length} palabras clave`);
-    }
-    
-  } 
-  else if (parsedQuery.isStructured) {
-    console.log('🎯 [PIPELINE] Tipo: BÚSQUEDA ESTRUCTURADA');
-    console.log('📋 [PIPELINE] Detalles:', {
-      product: parsedQuery.product,
-      position: parsedQuery.position,
-      model: parsedQuery.model,
-      brand: parsedQuery.brand,
-      year: parsedQuery.year
-    });
-    
-    const matchConditions = { 
-      tiene_precio_valido: true 
-    };
-    console.log('🔧 [PIPELINE] Condición inicial:', matchConditions);
-    
-    // 1. FILTRAR POR PRODUCTO/CATEGORÍA
-    if (parsedQuery.product) {
-      console.log('🔍 [PIPELINE] ===== PROCESANDO PRODUCTO =====');
-      const validCategories = getValidCategoriesForProduct(parsedQuery.product);
-      console.log('🔧 [PIPELINE] Categorías válidas para', parsedQuery.product, ':', validCategories);
-      
-      if (validCategories.length > 0) {
-        matchConditions.categoria = { $in: validCategories };
-        console.log('✅ [PIPELINE] Agregada condición de categoría:', matchConditions.categoria);
-      } else {
-        console.log('⚠️ [PIPELINE] No se encontraron categorías válidas');
-      }
-    }
-    
-    // 2. FILTRAR POR VEHÍCULO
-    let vehicleCondition = null;
-    
-    if (parsedQuery.model) {
-      console.log('🚗 [PIPELINE] ===== PROCESANDO VEHÍCULO =====');
-      console.log('🚗 [PIPELINE] Modelo:', parsedQuery.model);
-      console.log('🚗 [PIPELINE] Marca:', parsedQuery.brand || 'NINGUNA');
-      
-      if (parsedQuery.brand) {
-        console.log('🚗 [PIPELINE] Creando condición: MARCA + MODELO');
-        vehicleCondition = {
-          $elemMatch: {
-            marca: { $regex: parsedQuery.brand, $options: 'i' },
-            modelo: { $regex: parsedQuery.model, $options: 'i' }
-          }
-        };
-      } else {
-        console.log('🚗 [PIPELINE] Creando condición: SOLO MODELO');
-        vehicleCondition = {
-          $elemMatch: {
-            modelo: { $regex: parsedQuery.model, $options: 'i' }
-          }
-        };
-      }
-      
-      console.log('🚗 [PIPELINE] Condición de vehículo creada:', JSON.stringify(vehicleCondition, null, 2));
-      
-      // 3. AGREGAR AÑO SI EXISTE - LÓGICA BIDIRECCIONAL COMPLETA
-      if (parsedQuery.year && vehicleCondition) {
-        console.log('🔧 [PIPELINE] Agregando filtro de AÑO BIDIRECCIONAL:', parsedQuery.year);
-        
-        const targetYear = parseInt(parsedQuery.year);
-        const year2digit = parsedQuery.year.slice(-2);
-        console.log('🔧 [PIPELINE] Año objetivo:', targetYear);
-        console.log('🔧 [PIPELINE] Año 2 dígitos:', year2digit);
-        
-        // ✅ LÓGICA BIDIRECCIONAL: Buscar años que incluyan el año objetivo
-        const yearPatterns = [];
-        
-        // 1. Año específico en diferentes formatos
-        yearPatterns.push(`\\(${year2digit}\\)`);          // (09) - año específico
-        yearPatterns.push(`\\(${parsedQuery.year}\\)`);     // (2009) - año completo
-        yearPatterns.push(`${year2digit}`);                 // 09 - año suelto de 2 dígitos
-        yearPatterns.push(`${parsedQuery.year}`);           // 2009 - año suelto completo
-        
-        // 2. RANGOS HACIA ADELANTE: (XX/..) = "desde XX en adelante"
-        // Para 2009, buscar (08/..), (07/..), (06/..), etc.
-        const year2digitInt = parseInt(year2digit);
-        console.log('📅 [PIPELINE] Generando rangos hacia adelante...');
-        for (let startYear = 0; startYear <= year2digitInt; startYear++) {
-          const startYear2digit = startYear.toString().padStart(2, '0');
-          // Con paréntesis
-          yearPatterns.push(`\\(${startYear2digit}/\\.\\.\\)`);    // (08/..)
-          // Sin paréntesis
-          yearPatterns.push(`${startYear2digit}/\\.\\.`);          // 08/..
-        }
-        
-        // 3. RANGOS HACIA ATRÁS: (../XX) = "hasta XX" o "../XX"
-        // Para 2009, buscar (../09), (../10), (../11), etc.
-        console.log('📅 [PIPELINE] Generando rangos hacia atrás...');
-        for (let endYear = year2digitInt; endYear <= 99; endYear++) {
-          const endYear2digit = endYear.toString().padStart(2, '0');
-          // Con paréntesis
-          yearPatterns.push(`\\(\\.\\.\/${endYear2digit}\\)`);     // (../09)
-          // Sin paréntesis
-          yearPatterns.push(`\\.\\.\/${endYear2digit}`);           // ../09
-        }
-        
-        // 4. RANGOS CERRADOS BIDIRECCIONALES: (XX/YY)
-        // Para 2009, buscar rangos como (05/12), (07/15), etc. que incluyan 2009
-        console.log('📅 [PIPELINE] Generando rangos cerrados...');
-        for (let startYear = Math.max(0, year2digitInt - 8); startYear <= year2digitInt; startYear++) {
-          for (let endYear = year2digitInt; endYear <= Math.min(99, year2digitInt + 8); endYear++) {
-            if (startYear < endYear) { // Solo rangos válidos
-              const startYear2digit = startYear.toString().padStart(2, '0');
-              const endYear2digit = endYear.toString().padStart(2, '0');
-              // Con paréntesis
-              yearPatterns.push(`\\(${startYear2digit}\/${endYear2digit}\\)`); // (07/12)
-              // Sin paréntesis
-              yearPatterns.push(`${startYear2digit}\/${endYear2digit}`);        // 07/12
-            }
-          }
-        }
-        
-        // 5. FORMATOS ADICIONALES BIDIRECCIONALES
-        console.log('📅 [PIPELINE] Agregando formatos adicionales...');
-        // Inicio de rango
-        yearPatterns.push(`${year2digit}/`);                // 09/ - inicio de rango
-        yearPatterns.push(`\\(${year2digit}/`);             // (09/ - inicio de rango con paréntesis
-        
-        // Fin de rango  
-        yearPatterns.push(`/${year2digit}`);                // /09 - fin de rango
-        yearPatterns.push(`/${year2digit}\\)`);             // /09) - fin de rango con paréntesis
-        
-        // Rangos con puntos
-        yearPatterns.push(`\\.\\./${year2digit}`);          // ../09
-        yearPatterns.push(`${year2digit}/\\.\\.`);          // 09/..
-        
-        console.log('📅 [PIPELINE] Patrones bidireccionales generados (antes de validar):', yearPatterns.length, 'patrones');
-        console.log('📅 [PIPELINE] Primeros 10 patrones:', yearPatterns.slice(0, 10));
-        
-        // 6. VALIDAR todos los patrones antes de usarlos
-        const validYearPatterns = [];
-        yearPatterns.forEach((pattern, index) => {
-          try {
-            new RegExp(pattern, 'i'); // Test si el patrón es válido
-            validYearPatterns.push(pattern);
-            if (index < 15) { // Solo mostrar los primeros 15 para no saturar el log
-              console.log('✅ [PIPELINE] Patrón válido:', pattern);
-            }
-          } catch (error) {
-            console.warn('⚠️ [PIPELINE] Patrón regex inválido descartado:', pattern, 'Error:', error.message);
-          }
-        });
-        
-        console.log('📅 [PIPELINE] RESUMEN: Patrones válidos finales:', validYearPatterns.length, 'de', yearPatterns.length);
-        
-        // Agregar condiciones de año al $elemMatch existente solo si hay patrones válidos
-        if (validYearPatterns.length > 0) {
-          vehicleCondition.$elemMatch.$or = validYearPatterns.map(pattern => ({
-            version: { $regex: pattern, $options: 'i' }
-          }));
-          
-          console.log('📅 [PIPELINE] Condición bidireccional con año agregada');
-          console.log('📅 [PIPELINE] Total condiciones OR para versión:', validYearPatterns.length);
-        } else {
-          console.warn('⚠️ [PIPELINE] No se generaron patrones de año válidos, continuando sin filtro de año');
-        }
-      }
-      
-      matchConditions.aplicaciones = vehicleCondition;
-      console.log('✅ [PIPELINE] Condición de aplicaciones agregada al match');
-    }
-    
-    // 4. FILTRAR POR POSICIÓN
-    if (parsedQuery.position) {
-      console.log('📍 [PIPELINE] ===== PROCESANDO POSICIÓN =====');
-      console.log('📍 [PIPELINE] Posición original:', parsedQuery.position);
-      
-      const mappedPosition = mapPositionForSearch(parsedQuery.position);
-      console.log('📍 [PIPELINE] Posición mapeada:', mappedPosition);
-      
-      // Validar que el patrón de posición es válido antes de usarlo
-      try {
-        new RegExp(mappedPosition, 'i'); // Test del regex
-        matchConditions["detalles_tecnicos.Posición de la pieza"] = { 
-          $regex: mappedPosition, 
-          $options: 'i' 
-        };
-        console.log('✅ [PIPELINE] Condición de posición agregada');
-      } catch (error) {
-        console.warn('⚠️ [PIPELINE] Regex de posición inválido:', mappedPosition, 'Error:', error.message);
-        // Fallback: usar búsqueda exacta sin regex
-        matchConditions["detalles_tecnicos.Posición de la pieza"] = mappedPosition;
-        console.log('✅ [PIPELINE] Usando búsqueda exacta de posición como fallback');
-      }
-    }
-    
-    console.log('🏁 [PIPELINE] ===== CONDICIONES FINALES =====');
-    console.log('🏁 [PIPELINE] Match completo:', JSON.stringify(matchConditions, null, 2));
-    
-    pipeline.push({ $match: matchConditions });
-    
-  } else {
-    console.log('🔄 [PIPELINE] Tipo: FALLBACK');
-    pipeline.push({ $match: { tiene_precio_valido: true } });
-  }
-  
-  // Resto del pipeline
-  pipeline.push({
-    $addFields: {
-      relevanceScore: {
-        $add: [
-          10,
-          { $cond: [{ $ne: ["$nombre", null] }, 100, 0] },
-          { $multiply: [{ $size: { $ifNull: ["$aplicaciones", []] } }, 15] }
-        ]
-      }
-    }
-  });
-  
-  pipeline.push({ $sort: { relevanceScore: -1, codigo: 1 } });
-  if (offset > 0) pipeline.push({ $skip: offset });
-  pipeline.push({ $limit: limit });
-  pipeline.push({ $project: { relevanceScore: 0, _id: 0 } });
-  
-  console.log('🏗️ [PIPELINE] ===== PIPELINE COMPLETADO =====');
-  console.log('🏗️ [PIPELINE] Total etapas:', pipeline.length);
-  console.log('🏗️ [PIPELINE] Pipeline final:', JSON.stringify(pipeline, null, 2));
-  
-  return pipeline;
-}
-
-// ===== FUNCIÓN AUXILIAR PARA VERIFICAR SI UN AÑO ESTÁ EN RANGO BIDIRECCIONAL =====
-
-function checkYearInRangeBidirectional(versionString, targetYear) {
-  console.log('📅 [YEAR CHECK BIDIRECTIONAL] Verificando:', versionString, 'para año', targetYear);
-  
-  // Patrón (08/..) = desde 2008 hasta infinito
-  const openRangeForwardMatch = versionString.match(/\(?(\d{2})\/\.\.\)?/);
-  if (openRangeForwardMatch) {
-    const startYear = parseInt('20' + openRangeForwardMatch[1]);
-    const isInRange = targetYear >= startYear;
-    console.log('📅 [YEAR CHECK] Rango abierto hacia adelante:', startYear, '<=', targetYear, '=', isInRange);
-    return isInRange;
-  }
-  
-  // Patrón (../09) = hasta 2009 (hacia atrás)
-  const openRangeBackwardMatch = versionString.match(/\(?\.\.\/?(\d{2})\)?/);
-  if (openRangeBackwardMatch) {
-    const endYear = parseInt('20' + openRangeBackwardMatch[1]);
-    const isInRange = targetYear <= endYear;
-    console.log('📅 [YEAR CHECK] Rango abierto hacia atrás:', targetYear, '<=', endYear, '=', isInRange);
-    return isInRange;
-  }
-  
-  // Patrón (07/12) = desde 2007 hasta 2012  
-  const closedRangeMatch = versionString.match(/\(?(\d{2})\/(\d{2})\)?/);
-  if (closedRangeMatch) {
-    const startYear = parseInt('20' + closedRangeMatch[1]);
-    const endYear = parseInt('20' + closedRangeMatch[2]);
-    const isInRange = targetYear >= startYear && targetYear <= endYear;
-    console.log('📅 [YEAR CHECK] Rango cerrado:', startYear, '<=', targetYear, '<=', endYear, '=', isInRange);
-    return isInRange;
-  }
-  
-  // Año específico (09) o (2009)
-  const specificYearMatch = versionString.match(/\(?(\d{2,4})\)?/);
-  if (specificYearMatch) {
-    const yearStr = specificYearMatch[1];
-    const versionYear = yearStr.length === 2 ? parseInt('20' + yearStr) : parseInt(yearStr);
-    const isMatch = targetYear === versionYear;
-    console.log('📅 [YEAR CHECK] Año específico:', versionYear, '=', targetYear, '=', isMatch);
-    return isMatch;
-  }
-  
-  console.log('📅 [YEAR CHECK] No se pudo parsear:', versionString);
-  return false;
-}
-
-// ===== FUNCIÓN AUXILIAR PARA PROBAR PATRONES DE AÑOS =====
-
-function testYearPatterns() {
-  console.log('🧪 [TEST YEAR PATTERNS] ===== INICIO PRUEBAS =====');
-  
-  const testCases = [
-    // Rangos hacia adelante
-    { version: "(08/..)", targetYear: 2009, expected: true, description: "Rango adelante con paréntesis" },
-    { version: "08/..", targetYear: 2009, expected: true, description: "Rango adelante sin paréntesis" },
-    { version: "(10/..)", targetYear: 2009, expected: false, description: "Rango adelante que no incluye" },
-    
-    // Rangos hacia atrás
-    { version: "(../09)", targetYear: 2009, expected: true, description: "Rango atrás con paréntesis" },
-    { version: "../09", targetYear: 2009, expected: true, description: "Rango atrás sin paréntesis" },
-    { version: "(../08)", targetYear: 2009, expected: false, description: "Rango atrás que no incluye" },
-    
-    // Rangos cerrados
-    { version: "(07/12)", targetYear: 2009, expected: true, description: "Rango cerrado que incluye" },
-    { version: "07/12", targetYear: 2009, expected: true, description: "Rango cerrado sin paréntesis" },
-    { version: "(10/15)", targetYear: 2009, expected: false, description: "Rango cerrado que no incluye" },
-    
-    // Años específicos
-    { version: "(09)", targetYear: 2009, expected: true, description: "Año específico 2 dígitos" },
-    { version: "(2009)", targetYear: 2009, expected: true, description: "Año específico 4 dígitos" },
-    { version: "(08)", targetYear: 2009, expected: false, description: "Año específico diferente" }
-  ];
-  
-  console.log('🧪 [TEST YEAR PATTERNS] Ejecutando', testCases.length, 'casos de prueba...');
-  
-  testCases.forEach((testCase, index) => {
-    const result = checkYearInRangeBidirectional(testCase.version, testCase.targetYear);
-    const passed = result === testCase.expected;
-    
-    console.log(`🧪 [TEST ${index + 1}] ${testCase.description}:`);
-    console.log(`    Versión: ${testCase.version} | Año: ${testCase.targetYear}`);
-    console.log(`    Resultado: ${result} | Esperado: ${testCase.expected} | ${passed ? '✅ PASS' : '❌ FAIL'}`);
-    
-    if (!passed) {
-      console.error(`❌ [FAIL] Test ${index + 1} falló: ${testCase.description}`);
-    }
-  });
-  
-  console.log('🧪 [TEST YEAR PATTERNS] ===== FIN PRUEBAS =====');
-}
-
-function getValidCategoriesForProduct(product) {
-  const categoryMap = {
-    'amortiguador': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
-    'amortiguadores': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
-    
-    'pastilla': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
-    'pastillas': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
-    'freno': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
-    'frenos': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
-    
-    'disco': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
-    'discos': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
-    'campana': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
-    'campanas': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
-    
-    'cazoleta': ['Cazoletas CORVEN', 'Cazoletas SADAR'],
-    'cazoletas': ['Cazoletas CORVEN', 'Cazoletas SADAR'],
-    
-    'bieleta': ['Bieletas CORVEN', 'Bieletas SADAR'],
-    'bieletas': ['Bieletas CORVEN', 'Bieletas SADAR'],
-    'biela': ['Bieletas CORVEN', 'Bieletas SADAR'],
-    'bielas': ['Bieletas CORVEN', 'Bieletas SADAR'],
-    
-    'rotula': ['Rotulas CORVEN', 'Rotulas SADAR'],
-    'rotulas': ['Rotulas CORVEN', 'Rotulas SADAR'],
-    'rótula': ['Rotulas CORVEN', 'Rotulas SADAR'],
-    'rótulas': ['Rotulas CORVEN', 'Rotulas SADAR'],
-    
-    'embrague': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
-    'embragues': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
-    'clutch': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
-    
-    'brazo': ['Brazos Susp CORVEN', 'Brazos Susp SADAR'],
-    'brazos': ['Brazos Susp CORVEN', 'Brazos Susp SADAR'],
-    
-    'extremo': ['Extremos CORVEN', 'Extremos SADAR'],
-    'extremos': ['Extremos CORVEN', 'Extremos SADAR'],
-    
-    'axial': ['Axiales CORVEN', 'Axiales SADAR'],
-    'axiales': ['Axiales CORVEN', 'Axiales SADAR'],
-    
-    'homocinetica': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
-    'homocinéticas': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
-    'homocinética': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
-    'junta': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
-    'juntas': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
-    
-    'rodamiento': ['Rodamientos CORVEN', 'Rodamientos SADAR'],
-    'rodamientos': ['Rodamientos CORVEN', 'Rodamientos SADAR'],
-    'ruleman': ['Rodamientos CORVEN', 'Rodamientos SADAR'],
-    'rulemanes': ['Rodamientos CORVEN', 'Rodamientos SADAR'],
-    
-    'maza': ['Mazas CORVEN', 'Mazas HF'],
-    'mazas': ['Mazas CORVEN', 'Mazas HF'],
-    'buje': ['Mazas CORVEN', 'Mazas HF'],
-    'bujes': ['Mazas CORVEN', 'Mazas HF'],
-    
-    'semieje': ['Semiejes CORVEN'],
-    'semiejes': ['Semiejes CORVEN'],
-    'eje': ['Semiejes CORVEN'],
-    'ejes': ['Semiejes CORVEN'],
-    
-    'soporte': ['Soporte Motor CORVEN'],
-    'soportes': ['Soporte Motor CORVEN'],
-    
-    'parrilla': ['Parrillas CORVEN', 'Parrillas SADAR'],
-    'parrillas': ['Parrillas CORVEN', 'Parrillas SADAR'],
-    
-    'barra': ['Barras HD SADAR'],
-    'barras': ['Barras HD SADAR'],
-    
-    'caja': ['Cajas Mec CORVEN', 'Cajas Hid CORVEN'],
-    'cajas': ['Cajas Mec CORVEN', 'Cajas Hid CORVEN'],
-    'bomba': ['Bombas Hid CORVEN'],
-    'bombas': ['Bombas Hid CORVEN'],
-    
-    'suspension': ['Susp Neumática SADAR'],
-    'suspensión': ['Susp Neumática SADAR'],
-    'neumática': ['Susp Neumática SADAR'],
-    'neumatica': ['Susp Neumática SADAR']
-  };
-  
-  const normalizedProduct = product.toLowerCase().trim();
-  return categoryMap[normalizedProduct] || [];
-}
-
-
-function mapPositionForSearch(position) {
-  console.log('📍 [POSITION MAP] ===== INICIO MAPEO POSICIÓN =====');
-  console.log('📍 [POSITION MAP] Entrada original:', position);
-  console.log('📍 [POSITION MAP] Tipo de entrada:', typeof position);
-  
-  const positionMap = {
-    'delantero': 'Delantero',
-    'delanteros': 'Delantero',
-    'del': 'Delantero',
-    'anterior': 'Delantero',
-    'frontal': 'Delantero',
-    'delantera': 'Delantero',
-    'delanteras': 'Delantero',
-    
-    'trasero': 'Trasero',
-    'traseros': 'Trasero', 
-    'pos': 'Trasero',
-    'posterior': 'Trasero',
-    'trasera': 'Trasero',
-    'traseras': 'Trasero',
-    
-    'izquierdo': 'Izquierdo',
-    'izquierda': 'Izquierdo',
-    'izq': 'Izquierdo',
-    
-    'derecho': 'Derecho',
-    'derecha': 'Derecho',
-    'der': 'Derecho',
-    
-    'superior': 'Superior',
-    'sup': 'Superior',
-    'arriba': 'Superior',
-    
-    'inferior': 'Inferior',
-    'inf': 'Inferior',
-    'abajo': 'Inferior',
-    
-    'ambos_lados': '(Izquierdo|Derecho|Bilateral|izquierda y derecha)',
-    'bilateral': '(Izquierdo|Derecho|Bilateral)'
-  };
-  
-  console.log('📍 [POSITION MAP] Mapa de posiciones disponible:', Object.keys(positionMap));
-  
-  const normalizedPosition = position.toLowerCase().trim();
-  console.log('📍 [POSITION MAP] Posición normalizada:', normalizedPosition);
-  
-  const mappedPosition = positionMap[normalizedPosition] || position;
-  console.log('📍 [POSITION MAP] Posición mapeada:', mappedPosition);
-  
-  // ✅ VERIFICAR SI SE ENCONTRÓ MAPEO
-  if (positionMap[normalizedPosition]) {
-    console.log('✅ [POSITION MAP] Mapeo ENCONTRADO en diccionario');
-  } else {
-    console.log('⚠️ [POSITION MAP] Mapeo NO encontrado, usando original');
-  }
-  
-  console.log('📍 [POSITION MAP] ===== FIN MAPEO POSICIÓN =====');
-  
-  return mappedPosition;
-}
-
 router.get('/test-parser', async (req, res) => {
   const testQuery = 'amortiguador trasero corolla 2009';
   const parsed = parseNaturalQuery(testQuery);
@@ -1951,4 +1581,804 @@ router.get('/test-pipeline-detailed', async (req, res) => {
     });
   }
 });
+router.get('/productos-por-aplicacion', async (req, res) => {
+  try {
+    const { marca, modelo, version, categoria, limit = 20 } = req.query;
+
+    if (!marca || !modelo) {
+      return res.status(400).json({
+        success: false,
+        error: 'Marca y modelo son requeridos'
+      });
+    }
+
+    console.log('🚗 [APLICACIÓN] Buscando productos para:', { marca, modelo, version, categoria });
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Construir filtros
+    const filtros = {
+      tiene_precio_valido: true,
+      aplicaciones: {
+        $elemMatch: {
+          marca: { $regex: marca, $options: 'i' },
+          modelo: { $regex: modelo, $options: 'i' }
+        }
+      }
+    };
+
+    // Agregar filtro de versión si existe
+    if (version) {
+      filtros.aplicaciones.$elemMatch.version = { $regex: version, $options: 'i' };
+    }
+
+    // Agregar filtro de categoría si existe
+    if (categoria && categoria !== 'todos') {
+      if (CATEGORIAS[categoria]) {
+        filtros.categoria = { $in: CATEGORIAS[categoria] };
+      } else {
+        filtros.categoria = categoria;
+      }
+    }
+
+    const productos = await collection
+      .find(filtros)
+      .limit(parseInt(limit))
+      .sort({ codigo: 1 })
+      .toArray();
+
+    console.log(`✅ [APLICACIÓN] ${productos.length} productos encontrados`);
+
+    res.json({
+      success: true,
+      data: productos,
+      count: productos.length,
+      filters: { marca, modelo, version, categoria }
+    });
+
+  } catch (error) {
+    console.error('❌ [APLICACIÓN] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+router.get('/busqueda-avanzada', async (req, res) => {
+  try {
+    const {
+      producto,
+      marca,
+      modelo,
+      year,
+      posicion,
+      precio_min,
+      precio_max,
+      categoria,
+      limit = 20,
+      offset = 0,
+      ordenar = 'codigo'
+    } = req.query;
+
+    console.log('🔍 [BÚSQUEDA AVANZADA] Parámetros:', req.query);
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Construir filtros complejos
+    const filtros = { tiene_precio_valido: true };
+
+    // Filtro por producto/categoría
+    if (producto) {
+      const validCategories = getValidCategoriesForProductEnhanced(producto);
+      if (validCategories.length > 0) {
+        filtros.categoria = { $in: validCategories };
+      }
+    }
+
+    // Filtro por categoría específica
+    if (categoria && categoria !== 'todos') {
+      if (CATEGORIAS[categoria]) {
+        filtros.categoria = { $in: CATEGORIAS[categoria] };
+      } else {
+        filtros.categoria = categoria;
+      }
+    }
+
+    // Filtro por posición
+    if (posicion) {
+      const mappedPosition = mapPositionForSearch(posicion);
+      filtros["detalles_tecnicos.Posición de la pieza"] = { $regex: mappedPosition, $options: 'i' };
+    }
+
+    // Filtros de aplicación
+    const elemMatchConditions = [];
+    if (marca) {
+      elemMatchConditions.push({ "marca": { $regex: marca, $options: 'i' } });
+    }
+    if (modelo) {
+      elemMatchConditions.push({ "modelo": { $regex: modelo, $options: 'i' } });
+    }
+    if (year) {
+      const yearRegex = `(${year}|${year.slice(-2)})`;
+      elemMatchConditions.push({ 'version': { $regex: yearRegex, $options: 'i' } });
+    }
+
+    if (elemMatchConditions.length > 0) {
+      filtros.aplicaciones = { $elemMatch: { $and: elemMatchConditions } };
+    }
+
+    // Filtros de precio
+    if (precio_min || precio_max) {
+      filtros.precio_numerico = {};
+      if (precio_min) filtros.precio_numerico.$gte = parseFloat(precio_min);
+      if (precio_max) filtros.precio_numerico.$lte = parseFloat(precio_max);
+    }
+
+    console.log('🔍 [BÚSQUEDA AVANZADA] Filtros:', JSON.stringify(filtros, null, 2));
+
+    // Pipeline de agregación
+    const pipeline = [
+      { $match: filtros },
+      { $sort: { [ordenar]: 1 } }
+    ];
+
+    if (parseInt(offset) > 0) {
+      pipeline.push({ $skip: parseInt(offset) });
+    }
+
+    pipeline.push({ $limit: parseInt(limit) });
+    pipeline.push({ $project: { _id: 0 } });
+
+    const productos = await collection.aggregate(pipeline).toArray();
+
+    console.log(`✅ [BÚSQUEDA AVANZADA] ${productos.length} productos encontrados`);
+
+    res.json({
+      success: true,
+      data: productos,
+      count: productos.length,
+      filters: req.query,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [BÚSQUEDA AVANZADA] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+router.get('/estadisticas-busqueda', async (req, res) => {
+  try {
+    console.log('📊 [ESTADÍSTICAS] Generando estadísticas...');
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Agregación para estadísticas
+    const stats = await collection.aggregate([
+      {
+        $facet: {
+          totalProductos: [
+            { $count: "count" }
+          ],
+          productosConPrecio: [
+            { $match: { tiene_precio_valido: true } },
+            { $count: "count" }
+          ],
+          categorias: [
+            { $group: { _id: "$categoria", count: { $sum: 1 } } },
+            { $sort: { count: -1 } }
+          ],
+          marcasPopulares: [
+            { $unwind: "$aplicaciones" },
+            { $group: { _id: "$aplicaciones.marca", count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+            { $limit: 10 }
+          ],
+          modelosPopulares: [
+            { $unwind: "$aplicaciones" },
+            { $group: { _id: "$aplicaciones.modelo", count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+            { $limit: 10 }
+          ]
+        }
+      }
+    ]).toArray();
+
+    const estadisticas = stats[0];
+
+    console.log('✅ [ESTADÍSTICAS] Estadísticas generadas');
+
+    res.json({
+      success: true,
+      estadisticas: {
+        totalProductos: estadisticas.totalProductos[0]?.count || 0,
+        productosConPrecio: estadisticas.productosConPrecio[0]?.count || 0,
+        categorias: estadisticas.categorias,
+        marcasPopulares: estadisticas.marcasPopulares,
+        modelosPopulares: estadisticas.modelosPopulares
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [ESTADÍSTICAS] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+router.get('/validar-compatibilidad', async (req, res) => {
+  try {
+    const { codigo, year } = req.query;
+
+    if (!codigo || !year) {
+      return res.status(400).json({
+        success: false,
+        error: 'Código y año son requeridos'
+      });
+    }
+
+    console.log('🔧 [COMPATIBILIDAD] Validando:', codigo, 'para año', year);
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const producto = await collection.findOne({ codigo: codigo });
+
+    if (!producto) {
+      return res.status(404).json({
+        success: false,
+        error: 'Producto no encontrado'
+      });
+    }
+
+    const targetYear = parseInt(year);
+    let isCompatible = false;
+    let compatibleVersions = [];
+
+    if (producto.aplicaciones) {
+      producto.aplicaciones.forEach(app => {
+        if (app.version) {
+          const versionCompatible = checkYearInRangeBidirectional(app.version, targetYear);
+          if (versionCompatible) {
+            isCompatible = true;
+            compatibleVersions.push({
+              marca: app.marca,
+              modelo: app.modelo,
+              version: app.version
+            });
+          }
+        }
+      });
+    }
+
+    console.log(`✅ [COMPATIBILIDAD] ${codigo} es ${isCompatible ? 'compatible' : 'no compatible'} con ${year}`);
+
+    res.json({
+      success: true,
+      codigo: codigo,
+      year: targetYear,
+      isCompatible: isCompatible,
+      compatibleVersions: compatibleVersions,
+      totalVersions: producto.aplicaciones?.length || 0
+    });
+
+  } catch (error) {
+    console.error('❌ [COMPATIBILIDAD] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+router.get('/autocompletado', async (req, res) => {
+  try {
+    const { q, tipo = 'general', limit = 8 } = req.query;
+
+    if (!q || q.trim().length < 2) {
+      return res.json({
+        success: true,
+        suggestions: []
+      });
+    }
+
+    console.log('💡 [AUTOCOMPLETADO] Query:', q, 'Tipo:', tipo);
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const normalizedQuery = normalizeText(q);
+    const suggestions = new Set();
+
+    switch (tipo) {
+      case 'codigo':
+        // Sugerencias de códigos
+        const codigoMatches = await collection.find(
+          { codigo: { $regex: normalizedQuery, $options: 'i' } },
+          { projection: { codigo: 1, _id: 0 }, limit: parseInt(limit) }
+        ).toArray();
+        codigoMatches.forEach(p => suggestions.add(p.codigo));
+        break;
+
+      case 'vehiculo':
+        // Sugerencias de marcas y modelos
+        const vehicleMatches = await collection.aggregate([
+          { $unwind: "$aplicaciones" },
+          { $match: { 
+            $or: [
+              { "aplicaciones.marca": { $regex: normalizedQuery, $options: 'i' } },
+              { "aplicaciones.modelo": { $regex: normalizedQuery, $options: 'i' } }
+            ]
+          }},
+          { $group: { 
+            _id: null, 
+            marcas: { $addToSet: "$aplicaciones.marca" },
+            modelos: { $addToSet: "$aplicaciones.modelo" }
+          }},
+          { $limit: 1 }
+        ]).toArray();
+
+        if (vehicleMatches.length > 0) {
+          const { marcas, modelos } = vehicleMatches[0];
+          marcas.slice(0, 4).forEach(marca => {
+            if (marca.toLowerCase().includes(normalizedQuery)) {
+              suggestions.add(marca);
+            }
+          });
+          modelos.slice(0, 4).forEach(modelo => {
+            if (modelo.toLowerCase().includes(normalizedQuery)) {
+              suggestions.add(modelo);
+            }
+          });
+        }
+        break;
+
+      default:
+        // Sugerencias generales (códigos + vehículos + productos)
+        const generalMatches = await collection.aggregate([
+          {
+            $facet: {
+              codigos: [
+                { $match: { codigo: { $regex: normalizedQuery, $options: 'i' } } },
+                { $project: { codigo: 1, _id: 0 } },
+                { $limit: 3 }
+              ],
+              vehiculos: [
+                { $unwind: "$aplicaciones" },
+                { $match: { 
+                  $or: [
+                    { "aplicaciones.marca": { $regex: normalizedQuery, $options: 'i' } },
+                    { "aplicaciones.modelo": { $regex: normalizedQuery, $options: 'i' } }
+                  ]
+                }},
+                { $group: { 
+                  _id: null, 
+                  marcas: { $addToSet: "$aplicaciones.marca" },
+                  modelos: { $addToSet: "$aplicaciones.modelo" }
+                }},
+                { $limit: 1 }
+              ],
+              productos: [
+                { $match: { nombre: { $regex: normalizedQuery, $options: 'i' } } },
+                { $project: { nombre: 1, _id: 0 } },
+                { $limit: 2 }
+              ]
+            }
+          }
+        ]).toArray();
+
+        const general = generalMatches[0];
+
+        // Agregar códigos
+        general.codigos.forEach(p => suggestions.add(p.codigo));
+
+        // Agregar vehículos
+        if (general.vehiculos.length > 0) {
+          const { marcas, modelos } = general.vehiculos[0];
+          marcas.slice(0, 2).forEach(marca => {
+            if (marca.toLowerCase().includes(normalizedQuery)) {
+              suggestions.add(marca);
+            }
+          });
+          modelos.slice(0, 2).forEach(modelo => {
+            if (modelo.toLowerCase().includes(normalizedQuery)) {
+              suggestions.add(modelo);
+            }
+          });
+        }
+
+        // Agregar productos
+        general.productos.forEach(p => {
+          const words = p.nombre.split(' ').slice(0, 3).join(' ');
+          suggestions.add(words);
+        });
+        break;
+    }
+
+    const finalSuggestions = Array.from(suggestions).slice(0, parseInt(limit));
+
+    console.log(`💡 [AUTOCOMPLETADO] ${finalSuggestions.length} sugerencias generadas`);
+
+    res.json({
+      success: true,
+      query: q,
+      tipo: tipo,
+      suggestions: finalSuggestions,
+      count: finalSuggestions.length
+    });
+
+  } catch (error) {
+    console.error('❌ [AUTOCOMPLETADO] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+router.get('/productos-similares/:codigo', async (req, res) => {
+  try {
+    const { codigo } = req.params;
+    const { limit = 5 } = req.query;
+
+    console.log('🏷️ [SIMILARES] Buscando productos similares a:', codigo);
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Obtener producto original
+    const producto = await collection.findOne({ codigo: codigo });
+    
+    if (!producto) {
+      return res.status(404).json({
+        success: false,
+        error: 'Producto no encontrado'
+      });
+    }
+
+    // Buscar productos similares por categoría y aplicaciones
+    const filtros = {
+      codigo: { $ne: codigo }, // Excluir el producto actual
+      categoria: producto.categoria,
+      tiene_precio_valido: true
+    };
+
+    // Si el producto tiene aplicaciones, buscar productos compatibles
+    if (producto.aplicaciones && producto.aplicaciones.length > 0) {
+      const marcas = [...new Set(producto.aplicaciones.map(app => app.marca))];
+      const modelos = [...new Set(producto.aplicaciones.map(app => app.modelo))];
+      
+      filtros.$or = [
+        { "aplicaciones.marca": { $in: marcas } },
+        { "aplicaciones.modelo": { $in: modelos } }
+      ];
+    }
+
+    const similares = await collection
+      .find(filtros)
+      .limit(parseInt(limit))
+      .sort({ codigo: 1 })
+      .project({ _id: 0 })
+      .toArray();
+
+    console.log(`✅ [SIMILARES] ${similares.length} productos similares encontrados`);
+
+    res.json({
+      success: true,
+      codigo: codigo,
+      categoria: producto.categoria,
+      similares: similares,
+      count: similares.length
+    });
+
+  } catch (error) {
+    console.error('❌ [SIMILARES] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+router.get('/test-pipeline-detallado', async (req, res) => {
+  try {
+    console.log('🧪 [TEST DETALLADO] ===== INICIANDO TEST COMPLETO =====');
+    
+    const testQuery = req.query.q || 'amortiguador trasero corolla 2009';
+    console.log('🧪 [TEST DETALLADO] Query de prueba:', testQuery);
+    
+    // Parse de la query
+    const parsedQuery = parseNaturalQuery(testQuery);
+    console.log('🧪 [TEST DETALLADO] Query parseada:', JSON.stringify(parsedQuery, null, 2));
+    
+    // Construir pipeline con logs detallados
+    const pipeline = buildSearchPipelineWithLogs(parsedQuery, 10, 0);
+    
+    // Conectar y ejecutar
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+    
+    console.log('🧪 [TEST DETALLADO] ===== EJECUTANDO EN MONGODB =====');
+    const startTime = Date.now();
+    const results = await collection.aggregate(pipeline).toArray();
+    const executionTime = Date.now() - startTime;
+    
+    console.log('🧪 [TEST DETALLADO] ===== RESULTADOS =====');
+    console.log(`🧪 [TEST DETALLADO] Total resultados: ${results.length}`);
+    console.log(`🧪 [TEST DETALLADO] Tiempo de ejecución: ${executionTime}ms`);
+    
+    if (results.length > 0) {
+      console.log('🧪 [TEST DETALLADO] Primeros resultados:');
+      results.slice(0, 3).forEach((result, index) => {
+        console.log(`  ${index + 1}. ${result.codigo} - ${result.categoria}`);
+        console.log(`     Posición: ${result.detalles_tecnicos?.["Posición de la pieza"] || 'N/A'}`);
+        if (result.aplicaciones && result.aplicaciones.length > 0) {
+          const corollaApp = result.aplicaciones.find(app => 
+            app.modelo?.toLowerCase().includes('corolla')
+          );
+          if (corollaApp) {
+            console.log(`     Aplicación COROLLA: ${corollaApp.marca} ${corollaApp.modelo} ${corollaApp.version}`);
+          }
+        }
+      });
+    } else {
+      console.log('❌ [TEST DETALLADO] No se encontraron resultados');
+      
+      // Tests individuales para debugging
+      console.log('🔬 [DEBUG] Ejecutando tests individuales...');
+      
+      // Test 1: Solo categoría
+      const categoryTest = await collection.find({
+        categoria: { $in: ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'] }
+      }).limit(3).toArray();
+      console.log(`🔬 [DEBUG] Solo categoría amortiguador: ${categoryTest.length} productos`);
+      
+      // Test 2: Solo modelo COROLLA
+      const modelTest = await collection.find({
+        'aplicaciones.modelo': { $regex: 'COROLLA', $options: 'i' }
+      }).limit(3).toArray();
+      console.log(`🔬 [DEBUG] Solo modelo COROLLA: ${modelTest.length} productos`);
+      
+      // Test 3: Solo año 2009
+      const yearTest = await collection.find({
+        'aplicaciones.version': { $regex: '(2009|09)', $options: 'i' }
+      }).limit(3).toArray();
+      console.log(`🔬 [DEBUG] Solo año 2009: ${yearTest.length} productos`);
+    }
+    
+    res.json({
+      success: true,
+      query: testQuery,
+      parsedQuery: parsedQuery,
+      pipeline: pipeline,
+      results: results.length,
+      executionTime: executionTime,
+      examples: results.slice(0, 5).map(r => ({
+        codigo: r.codigo,
+        categoria: r.categoria,
+        posicion: r.detalles_tecnicos?.["Posición de la pieza"] || 'N/A',
+        aplicaciones: r.aplicaciones?.map(a => `${a.marca} ${a.modelo} ${a.version}`) || []
+      })),
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ [TEST DETALLADO] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+router.post('/reindexar', async (req, res) => {
+  try {
+    console.log('🔧 [REINDEXAR] Iniciando proceso de reindexación...');
+    
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+    
+    // Crear índices para mejorar performance
+    const indices = [
+      { codigo: 1 },
+      { categoria: 1 },
+      { tiene_precio_valido: 1 },
+      { "aplicaciones.marca": 1 },
+      { "aplicaciones.modelo": 1 },
+      { "aplicaciones.version": 1 },
+      { "detalles_tecnicos.Posición de la pieza": 1 },
+      { nombre: "text", codigo: "text" } // Índice de texto para búsqueda
+    ];
+    
+    console.log('🔧 [REINDEXAR] Creando índices...');
+    
+    for (const indice of indices) {
+      try {
+        await collection.createIndex(indice);
+        console.log(`✅ [REINDEXAR] Índice creado:`, indice);
+      } catch (error) {
+        console.log(`⚠️ [REINDEXAR] Índice ya existe o error:`, indice, error.message);
+      }
+    }
+    
+    // Estadísticas después de reindexar
+    const stats = await collection.stats();
+    const totalDocs = await collection.countDocuments();
+    const docsConPrecio = await collection.countDocuments({ tiene_precio_valido: true });
+    
+    console.log('✅ [REINDEXAR] Reindexación completada');
+    
+    res.json({
+      success: true,
+      message: 'Reindexación completada exitosamente',
+      estadisticas: {
+        totalDocumentos: totalDocs,
+        documentosConPrecio: docsConPrecio,
+        tamanioColeccion: stats.size,
+        indicesCreados: indices.length
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ [REINDEXAR] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+router.get('/metricas-rendimiento', async (req, res) => {
+  try {
+    console.log('📈 [MÉTRICAS] Obteniendo métricas de rendimiento...');
+    
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+    
+    const startTime = Date.now();
+    
+    // Test de consultas comunes
+    const tests = {
+      consultaSimple: null,
+      consultaPorCodigo: null,
+      consultaPorCategoria: null,
+      consultaPorAplicacion: null,
+      consultaCompleja: null
+    };
+    
+    // Test 1: Consulta simple
+    const start1 = Date.now();
+    await collection.findOne();
+    tests.consultaSimple = Date.now() - start1;
+    
+    // Test 2: Consulta por código
+    const start2 = Date.now();
+    await collection.findOne({ codigo: "10001" });
+    tests.consultaPorCodigo = Date.now() - start2;
+    
+    // Test 3: Consulta por categoría
+    const start3 = Date.now();
+    await collection.find({ categoria: "Amort CORVEN" }).limit(10).toArray();
+    tests.consultaPorCategoria = Date.now() - start3;
+    
+    // Test 4: Consulta por aplicación
+    const start4 = Date.now();
+    await collection.find({ "aplicaciones.marca": "FORD" }).limit(10).toArray();
+    tests.consultaPorAplicacion = Date.now() - start4;
+    
+    // Test 5: Consulta compleja
+    const start5 = Date.now();
+    await collection.find({
+      categoria: { $in: ["Amort CORVEN", "Amort SADAR"] },
+      "aplicaciones.marca": "FORD",
+      tiene_precio_valido: true
+    }).limit(10).toArray();
+    tests.consultaCompleja = Date.now() - start5;
+    
+    const totalTime = Date.now() - startTime;
+    
+    // Obtener estadísticas de la colección
+    const stats = await db.runCommand({ collStats: COLLECTION_NAME });
+    
+    console.log('✅ [MÉTRICAS] Métricas obtenidas');
+    
+    res.json({
+      success: true,
+      metricas: {
+        tiempoTotal: totalTime,
+        testIndividuales: tests,
+        estadisticasColeccion: {
+          documentos: stats.count,
+          tamanioPromedio: Math.round(stats.avgObjSize),
+          tamanioTotal: stats.size,
+          indices: stats.nindexes
+        }
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ [MÉTRICAS] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+router.get('/busqueda-texto', async (req, res) => {
+  try {
+    const { q, limit = 20 } = req.query;
+    
+    if (!q || q.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Query requerida (mínimo 2 caracteres)'
+      });
+    }
+    
+    console.log('🔍 [TEXTO] Búsqueda por texto completo:', q);
+    
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+    
+    // Búsqueda usando índice de texto
+    const results = await collection
+      .find(
+        { 
+          $text: { $search: q },
+          tiene_precio_valido: true 
+        },
+        { 
+          score: { $meta: "textScore" } 
+        }
+      )
+      .sort({ score: { $meta: "textScore" } })
+      .limit(parseInt(limit))
+      .toArray();
+    
+    console.log(`✅ [TEXTO] ${results.length} resultados encontrados`);
+    
+    res.json({
+      success: true,
+      query: q,
+      results: results,
+      count: results.length,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ [TEXTO] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+console.log('✅ [BACKEND] Funciones de búsqueda avanzada agregadas exitosamente');
+console.log('🚀 [BACKEND] Endpoints disponibles:');
+console.log('   - GET /productos-por-aplicacion');
+console.log('   - GET /busqueda-avanzada'); 
+console.log('   - GET /estadisticas-busqueda');
+console.log('   - GET /validar-compatibilidad');
+console.log('   - GET /autocompletado');
+console.log('   - GET /productos-similares/:codigo');
+console.log('   - GET /test-pipeline-detallado');
+console.log('   - POST /reindexar');
+console.log('   - GET /metricas-rendimiento');
+console.log('   - GET /busqueda-texto');
 module.exports = router;
