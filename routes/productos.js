@@ -32,30 +32,37 @@ const RENDER_OPTIMIZATIONS = {
 
 // 🛡️ CONFIGURACIÓN DEFENSIVA MEJORADA PARA RENDER
 const RENDER_CONFIG = {
-  // Timeouts específicos para cold starts
-  connectTimeoutMS: 60000,        // 60 segundos para conectar (cold start)
-  serverSelectionTimeoutMS: 45000, // 45 segundos para seleccionar servidor
-  socketTimeoutMS: 60000,         // 60 segundos para socket
-  maxIdleTimeMS: 120000,          // 2 minutos idle para mantener conexión
+  // Timeouts básicos
+  connectTimeoutMS: 60000,
+  serverSelectionTimeoutMS: 45000,
+  socketTimeoutMS: 60000,
+  maxIdleTimeMS: 120000,
   
-  // Pool más conservador para Render
-  maxPoolSize: 3,                 // Máximo 3 conexiones
-  minPoolSize: 1,                 // Mínimo 1 conexión
+  // Pool de conexiones
+  maxPoolSize: 3,
+  minPoolSize: 1,
   
-  // Reintentos más agresivos para cold starts
-  maxRetries: 6,                  // Más reintentos
-  retryDelayMs: 3000,             // Delay mayor entre reintentos
-  
-  // Configuraciones especiales para Render
-  useCompression: false,
-  bufferMaxEntries: 0,
-  bufferCommands: false,
-  
-  // Configuraciones de escritura más tolerantes
+  // Configuraciones de escritura/lectura
   writeConcern: { w: 'majority', j: false, wtimeout: 30000 },
   readConcern: { level: 'local' },
-  readPreference: 'secondaryPreferred'
+  readPreference: 'secondaryPreferred',
+  
+  // Configuraciones de retry - NAMES CORREGIDOS
+  retryWrites: true,
+  retryReads: true,
+  
+  // Configuraciones de compresión
+  compressors: [],
+  
+  // Configuraciones de heartbeat
+  heartbeatFrequencyMS: 30000,
+  maxConnecting: 2,
+  
+  // Variables para el sistema de retry manual
+  maxRetries: 6,
+  retryDelayMs: 3000
 };
+
 
 // 🔄 SISTEMA DE CONEXIÓN INTELIGENTE PARA RENDER
 class RenderConnectionManager {
@@ -127,26 +134,28 @@ class RenderConnectionManager {
       console.log(`⏱️ [MongoDB] Timeout configurado: ${timeout}ms`);
       
       this.client = new MongoClient(MONGODB_URI, {
+        // Timeouts
         connectTimeoutMS: timeout,
         serverSelectionTimeoutMS: RENDER_CONFIG.serverSelectionTimeoutMS,
         socketTimeoutMS: RENDER_CONFIG.socketTimeoutMS,
         maxIdleTimeMS: RENDER_CONFIG.maxIdleTimeMS,
+        
+        // Pool
         maxPoolSize: RENDER_CONFIG.maxPoolSize,
         minPoolSize: RENDER_CONFIG.minPoolSize,
-        bufferMaxEntries: RENDER_CONFIG.bufferMaxEntries,
-        bufferCommands: RENDER_CONFIG.bufferCommands,
+        
+        // Retry y configuraciones básicas
         retryWrites: true,
         retryReads: true,
         readPreference: RENDER_CONFIG.readPreference,
         readConcern: RENDER_CONFIG.readConcern,
         writeConcern: RENDER_CONFIG.writeConcern,
         
-        // Configuraciones adicionales para Render
-        maxConnecting: 2,
+        // Configuraciones de heartbeat
         heartbeatFrequencyMS: 30000,
-        serverSelectionRetryIntervalMS: 5000,
+        maxConnecting: 2,
         
-        // Configuración de compresión deshabilitada
+        // Sin compresión
         compressors: []
       });
       
