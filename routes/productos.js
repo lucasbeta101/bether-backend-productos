@@ -97,14 +97,23 @@ function getValidCategoriesForProduct(product) {
 }
 
 function mapPositionForSearch(position) {
-    const positionMap = {
-        'delantero': 'Delantero', 'del': 'Delantero',
-        'trasero': 'Trasero', 'pos': 'Trasero',
-        'izquierdo': 'Izquierdo', 'izq': 'Izquierdo',
-        'derecho': 'Derecho', 'der': 'Derecho',
-        'superior': 'Superior', 'sup': 'Superior',
-        'inferior': 'Inferior', 'inf': 'Inferior',
-    };
+  const positionMap = {
+    // Posiciones masculinas (originales)
+    'delantero': 'Delantero', 'del': 'Delantero',
+    'trasero': 'Trasero', 'pos': 'Trasero',
+    'izquierdo': 'Izquierdo', 'izq': 'Izquierdo',
+    'derecho': 'Derecho', 'der': 'Derecho',
+    'superior': 'Superior', 'sup': 'Superior',
+    'inferior': 'Inferior', 'inf': 'Inferior',
+    
+    // ✅ POSICIONES FEMENINAS AGREGADAS
+    'delantera': 'Delantero',   // parrilla delantera -> Delantero
+    'trasera': 'Trasero',       // barra trasera -> Trasero
+    'izquierda': 'Izquierdo',   // rotula izquierda -> Izquierdo
+    'derecha': 'Derecho',       // cazoleta derecha -> Derecho
+    'posterior': 'Trasero',     // suspension posterior -> Trasero
+    'anterior': 'Delantero',    // bieleta anterior -> Delantero
+ };
     const normalizedPosition = normalizeText(position);
     return positionMap[normalizedPosition] || position;
 }
