@@ -1255,63 +1255,40 @@ router.get('/sugerencias', async (req, res) => {
 
 // 🚀 7. RUTA DE METADATOS BÁSICOS (LEGACY COMPATIBILITY)
 router.get('/metadatos', async (req, res) => {
-  console.time('⚡ /metadatos');
-  
   try {
-    const cacheKey = 'metadatos_basicos';
+    console.log('📋 [METADATOS] Iniciando carga de metadatos...');
     
-    const cached = CACHE_SYSTEM.get(cacheKey);
-    if (cached) {
-      console.timeEnd('⚡ /metadatos');
-      return res.json({ ...cached, cached: true });
-    }
-    
-    console.log('📋 [METADATOS] Cargando metadatos básicos...');
     const client = await connectToMongoDB();
-    const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
-    
-    console.time('⚡ MongoDB Metadatos Básicos');
-    
-    const metadatos = await collection.find(
-      { tiene_precio_valido: true },
-      {
-        projection: { 
-          codigo: 1, 
-          categoria: 1, 
-          marca: 1, 
-          nombre: 1, 
-          aplicaciones: 1, 
-          "detalles_tecnicos.Posición de la pieza": 1, 
-          _id: 0 
-        }
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // ✅ PROYECCIÓN: Solo campos necesarios para filtros
+    const metadatos = await collection.find({}, {
+      projection: {
+        codigo: 1,
+        categoria: 1,
+        marca: 1,
+        nombre: 1,
+        aplicaciones: 1,
+        "detalles_tecnicos.Posición de la pieza": 1,
+        _id: 0 // Excluir _id para reducir tamaño
       }
-    ).toArray();
-    
-    console.timeEnd('⚡ MongoDB Metadatos Básicos');
-    
-    const resultado = {
+    }).toArray();
+
+    console.log(`✅ [METADATOS] ${metadatos.length} metadatos cargados`);
+
+    res.json({
       success: true,
       count: metadatos.length,
       data: metadatos,
-      cached: false,
       timestamp: new Date().toISOString()
-    };
-    
-    // Cache de 15 minutos
-    CACHE_SYSTEM.set(cacheKey, resultado, 15 * 60 * 1000);
-    
-    console.timeEnd('⚡ /metadatos');
-    console.log(`✅ [METADATOS] ${metadatos.length} metadatos básicos cargados`);
-    
-    res.json(resultado);
-    
+    });
+
   } catch (error) {
-    console.timeEnd('⚡ /metadatos');
     console.error('❌ [METADATOS] Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Error al obtener metadatos',
-      details: error.message
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al obtener metadatos'
     });
   }
 });
