@@ -1,11 +1,44 @@
 const express = require('express');
-const router = express.Router();
+const router = express.Router(); // Asegúrate de que estás usando 'router' si este es un archivo de rutas, o 'app' si es tu archivo principal de Express.
 const { MongoClient } = require('mongodb');
+const cors = require('cors'); // <--- Añade esta línea para importar el paquete CORS
 
 // ===== CONFIGURACIÓN MONGODB =====
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://lucasbeta101:rEeTjUzGt9boy4Zy@bether.qxglnnl.mongodb.net/?retryWrites=true&w=majority&appName=Bether";
 const DB_NAME = process.env.DB_NAME || "autopartes";
 const COLLECTION_NAME = process.env.COLLECTION_NAME || "productos";
+
+// Definir los orígenes permitidos
+// Es importante incluir 'http://localhost:3000' para tu entorno de desarrollo.
+// Para los dominios de producción, se recomienda usar HTTPS.
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://bethersa.com.ar',
+  'https://www.bethersa.com.ar', // Considera ambas versiones (con y sin www)
+  'https://bethersa.online',
+  'https://www.bethersa.online',
+  'https://bethersa.store',
+  'https://www.bethersa.store',
+  'https://bether-backend-productos.onrender.com' // Si tu frontend también se sirve desde Render, podrías necesitar esto.
+];
+
+// Configuración de CORS
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permite solicitudes sin 'origin' (como aplicaciones móviles, Postman, curl, etc.)
+    // o si el origen está en nuestra lista de permitidos.
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('No permitido por CORS'));
+    }
+  },
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE', // Define los métodos HTTP permitidos
+  credentials: true, // Si necesitas enviar cookies o cabeceras de autorización
+  optionsSuccessStatus: 204 // Código de estado para las pre-solicitudes OPTIONS
+};
+router.use(cors(corsOptions));
+
 
 // 🚨 CONFIGURACIÓN ESPECIAL PARA RENDER.COM
 const RENDER_CONFIG = {
