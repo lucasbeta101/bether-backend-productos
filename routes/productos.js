@@ -1,43 +1,43 @@
 const express = require('express');
-const router = express.Router(); // Asegúrate de que estás usando 'router' si este es un archivo de rutas, o 'app' si es tu archivo principal de Express.
+const cors = require('cors');
 const { MongoClient } = require('mongodb');
-const cors = require('cors'); // <--- Añade esta línea para importar el paquete CORS
 
-// ===== CONFIGURACIÓN MONGODB =====
+// ===== CONFIGURACIÓN =====
+const app = express();
+const PORT = process.env.PORT || 3001; // Puerto 3001 para separar del frontend
+
+// MONGODB
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://lucasbeta101:rEeTjUzGt9boy4Zy@bether.qxglnnl.mongodb.net/?retryWrites=true&w=majority&appName=Bether";
 const DB_NAME = process.env.DB_NAME || "autopartes";
 const COLLECTION_NAME = process.env.COLLECTION_NAME || "productos";
 
-// Definir los orígenes permitidos
-// Es importante incluir 'http://localhost:3000' para tu entorno de desarrollo.
-// Para los dominios de producción, se recomienda usar HTTPS.
+// ===== CONFIGURACIÓN CORS =====
 const allowedOrigins = [
-  'http://localhost:3000',
+  'http://localhost:3000',    // Tu frontend
+  'http://127.0.0.1:3000',
   'https://bethersa.com.ar',
-  'https://www.bethersa.com.ar', // Considera ambas versiones (con y sin www)
+  'https://www.bethersa.com.ar',
   'https://bethersa.online',
-  'https://www.bethersa.online',
-  'https://bethersa.store',
-  'https://www.bethersa.store',
-  'https://bether-backend-productos.onrender.com' // Si tu frontend también se sirve desde Render, podrías necesitar esto.
+  'https://www.bethersa.online'
 ];
 
-// Configuración de CORS
 const corsOptions = {
   origin: function (origin, callback) {
-    // Permite solicitudes sin 'origin' (como aplicaciones móviles, Postman, curl, etc.)
-    // o si el origen está en nuestra lista de permitidos.
+    // Permitir requests sin origin (Postman, aplicaciones móviles, etc.)
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
+      console.warn('❌ [CORS] Origen no permitido:', origin);
       callback(new Error('No permitido por CORS'));
     }
   },
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE', // Define los métodos HTTP permitidos
-  credentials: true, // Si necesitas enviar cookies o cabeceras de autorización
-  optionsSuccessStatus: 204 // Código de estado para las pre-solicitudes OPTIONS
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  credentials: true,
+  optionsSuccessStatus: 200
 };
-router.use(cors(corsOptions));
+
+app.use(cors(corsOptions));
+app.use(express.json());
 
 
 // 🚨 CONFIGURACIÓN ESPECIAL PARA RENDER.COM
@@ -75,94 +75,39 @@ let healthStatus = {
 };
 
 async function connectToMongoDB() {
-  // Si ya hay una conexión activa, usarla
   if (cachedClient && cachedClient.topology && cachedClient.topology.isConnected()) {
     console.log('📱 [MONGODB] Usando conexión existente');
-    healthStatus.mongodb = 'connected';
     return cachedClient;
   }
 
-  // Si ya se está conectando, esperar
-  if (isConnecting) {
-    console.log('⏳ [MONGODB] Esperando conexión en progreso...');
-    let attempts = 0;
-    while (isConnecting && attempts < 100) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      attempts++;
-    }
-    if (cachedClient) return cachedClient;
-  }
+  console.log('🔌 [MONGODB] Creando nueva conexión...');
+  
+  const client = new MongoClient(MONGODB_URI, {
+    maxPoolSize: 10,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+    connectTimeoutMS: 5000,
+    retryWrites: true,
+    retryReads: true
+  });
 
-  isConnecting = true;
-  connectionAttempts++;
-  
-  console.log(`🔌 [MONGODB] Intento de conexión ${connectionAttempts}`);
-  
   try {
-    // Detectar si es cold start
-    const uptime = Date.now() - serverStartTime;
-    const isColdStart = uptime < 120000; // Primeros 2 minutos
-    
-    // Timeouts adaptativos
-    const timeouts = isColdStart ? {
-      connectTimeoutMS: 45000,
-      serverSelectionTimeoutMS: 30000,
-      socketTimeoutMS: 60000
-    } : RENDER_CONFIG;
-    
-    console.log(`🔌 [MONGODB] Configuración: Cold Start=${isColdStart}, Timeout=${timeouts.connectTimeoutMS}ms`);
-    
-    const client = new MongoClient(MONGODB_URI, {
-      ...timeouts,
-      maxPoolSize: RENDER_CONFIG.maxPoolSize,
-      minPoolSize: RENDER_CONFIG.minPoolSize,
-      retryWrites: RENDER_CONFIG.retryWrites,
-      retryReads: RENDER_CONFIG.retryReads,
-      readPreference: RENDER_CONFIG.readPreference
-    });
-
-    // Conectar con timeout personalizado
-    await Promise.race([
-      client.connect(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error(`Connection timeout after ${timeouts.connectTimeoutMS}ms`)), timeouts.connectTimeoutMS)
-      )
-    ]);
-
-    // Verificar conexión con ping
-    await client.db(DB_NAME).command({ ping: 1 });
-    
+    await client.connect();
+    console.log('✅ [MONGODB] Conectado exitosamente a:', DB_NAME);
     cachedClient = client;
-    lastError = null;
-    isConnecting = false;
-    healthStatus.mongodb = 'connected';
-    healthStatus.status = 'connected';
-    
-    console.log('✅ [MONGODB] Conectado exitosamente');
-    console.log(`📊 [MONGODB] Base de datos: ${DB_NAME}, Colección: ${COLLECTION_NAME}`);
-    
     return client;
-    
   } catch (error) {
-    lastError = error;
-    isConnecting = false;
-    healthStatus.mongodb = 'error';
-    healthStatus.status = 'error';
-    healthStatus.errors.push({
-      timestamp: new Date().toISOString(),
-      message: error.message,
-      attempt: connectionAttempts
-    });
-    
-    console.error(`❌ [MONGODB] Error de conexión (intento ${connectionAttempts}):`, {
-      message: error.message,
-      code: error.code,
-      uptime: Date.now() - serverStartTime
-    });
-    
+    console.error('❌ [MONGODB] Error de conexión:', error);
     throw error;
   }
 }
+
+// ===== MIDDLEWARE =====
+app.use((req, res, next) => {
+  console.log(`📝 [${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  next();
+});
+
 
 // Función de conexión con reintentos
 async function connectWithRetry(maxRetries = 3, context = 'general') {
@@ -285,98 +230,42 @@ const CATEGORIAS = {
   "Otros": ["Otros"]
 };
 
-// ===== RUTAS =====
 
-// 🏥 PING - Health check mejorado
-router.get('/ping', async (req, res) => {
-  const startTime = Date.now();
-  
+
+app.get('/api/ping', async (req, res) => {
   try {
-    console.log('🏥 [PING] Iniciando health check...');
+    console.log('🏥 [PING] Verificando conexión MongoDB...');
     
-    // Actualizar health status
-    healthStatus.uptime = Date.now() - serverStartTime;
-    healthStatus.lastPing = new Date().toISOString();
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
     
-    // Intentar conectar con menos reintentos para ping
-    const client = await connectWithRetry(req.isColdStart ? 2 : 3, 'ping');
+    // Ping básico
+    await db.command({ ping: 1 });
     
-    // Test de ping
-    await client.db(DB_NAME).command({ ping: 1 });
+    // Contar documentos
+    const count = await db.collection(COLLECTION_NAME).countDocuments();
     
-    // Contar documentos básico
-    const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
-    const count = await collection.estimatedDocumentCount();
-    
-    const responseTime = Date.now() - startTime;
-    healthStatus.status = 'healthy';
-    
-    console.log(`✅ [PING] Health check exitoso (${responseTime}ms)`);
+    console.log('✅ [PING] MongoDB conectado OK');
 
     res.json({
       success: true,
-      message: `MongoDB conectado exitosamente ${req.isColdStart ? '(Cold Start)' : '(Ready)'}`,
-      responseTime: `${responseTime}ms`,
-      
-      // Información del servidor
-      server: {
-        status: req.isColdStart ? 'warming-up' : 'ready',
-        uptime: req.uptime,
-        coldStart: req.isColdStart,
-        environment: process.env.NODE_ENV || 'unknown'
-      },
-      
-      // Información de la base de datos
-      database: {
-        name: DB_NAME,
-        collection: COLLECTION_NAME,
-        totalProducts: count,
-        connected: true
-      },
-      
-      // Health status
-      health: healthStatus,
-      
+      message: 'MongoDB conectado exitosamente',
+      database: DB_NAME,
+      collection: COLLECTION_NAME,
+      totalProducts: count,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    const responseTime = Date.now() - startTime;
-    
-    console.error(`❌ [PING] Health check falló (${responseTime}ms):`, error.message);
-    
-    healthStatus.status = 'error';
-    healthStatus.errors.push({
-      timestamp: new Date().toISOString(),
-      message: error.message,
-      context: 'ping'
-    });
-    
-    res.status(503).json({
+    console.error('❌ [PING] Error:', error);
+    res.status(500).json({
       success: false,
-      message: `Error de conexión ${req.isColdStart ? '(Cold Start)' : '(Ready)'}`,
-      responseTime: `${responseTime}ms`,
-      error: {
-        message: error.message,
-        code: error.code,
-        type: error.name
-      },
-      server: {
-        status: req.isColdStart ? 'cold-start-error' : 'connection-error',
-        uptime: req.uptime,
-        coldStart: req.isColdStart
-      },
-      health: healthStatus,
-      fallback: true,
-      timestamp: new Date().toISOString()
+      error: error.message || 'Error de conexión MongoDB'
     });
   }
 });
 
-// 📦 PRODUCTOS - Con filtros y paginación mejorados
-router.get('/productos', async (req, res) => {
-  const startTime = Date.now();
-  
+app.get('/api/productos', async (req, res) => {
   try {
     const { 
       categoria, 
@@ -393,39 +282,12 @@ router.get('/productos', async (req, res) => {
       categoria, marca, modelo, version, posicion, pagina, limite
     });
 
-    // Si es cold start con muchos errores, usar fallback inmediato
-    if (req.isColdStart && healthStatus.errors.length > 3) {
-      console.log('🥶 [PRODUCTOS] Cold start con errores - Usando fallback');
-      
-      return res.json({
-        success: true,
-        data: FALLBACK_DATA.productos,
-        pagination: {
-          currentPage: 1,
-          totalPages: 1,
-          totalProducts: FALLBACK_DATA.productos.length,
-          productsPerPage: FALLBACK_DATA.productos.length,
-          hasNextPage: false,
-          hasPrevPage: false
-        },
-        fallback: {
-          active: true,
-          reason: 'cold-start-with-errors',
-          message: 'Datos temporales mientras el servidor se inicia'
-        },
-        server: {
-          coldStart: true,
-          uptime: req.uptime
-        },
-        timestamp: new Date().toISOString()
-      });
-    }
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
 
-    const client = await connectWithRetry(req.isColdStart ? 3 : 5, 'productos');
-    const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
-
-    // ✅ CONSTRUIR FILTROS DINÁMICAMENTE
-    const filtros = { tiene_precio_valido: true };
+    // Construir filtros
+    const filtros = {};
 
     // Filtro por categoría
     if (categoria && categoria !== 'todos') {
@@ -437,68 +299,56 @@ router.get('/productos', async (req, res) => {
     }
 
     // Filtros de vehículo
-    if (marca) filtros["aplicaciones.marca"] = marca;
-    if (modelo) filtros["aplicaciones.modelo"] = modelo;
-    if (version) filtros["aplicaciones.version"] = version;
+    if (marca || modelo || version) {
+      const aplicacionesFiltro = {};
+      if (marca) aplicacionesFiltro["aplicaciones.marca"] = marca;
+      if (modelo) aplicacionesFiltro["aplicaciones.modelo"] = modelo;
+      if (version) aplicacionesFiltro["aplicaciones.version"] = version;
+      
+      Object.assign(filtros, aplicacionesFiltro);
+    }
 
     // Filtro por posición
     if (posicion) {
       filtros["detalles_tecnicos.Posición de la pieza"] = posicion;
     }
 
+    // Solo productos con precio válido
+    filtros.tiene_precio_valido = true;
+
     console.log('🔍 [PRODUCTOS] Filtros construidos:', JSON.stringify(filtros, null, 2));
 
-    // ✅ PAGINACIÓN
-    const skip = Math.max(0, (parseInt(pagina) - 1) * parseInt(limite));
-    const limiteInt = Math.min(parseInt(limite), req.isColdStart ? 20 : 50);
+    // Paginación
+    const skip = (parseInt(pagina) - 1) * parseInt(limite);
+    const limiteInt = parseInt(limite);
 
-    // ✅ EJECUTAR CONSULTA CON AGREGACIÓN Y TIMEOUT
+    // Ordenamiento
+    const sort = {};
+    sort[ordenar] = 1;
+
+    // Ejecutar consulta con agregación
     const pipeline = [
       { $match: filtros },
-      { $sort: { [ordenar]: 1 } },
+      { $sort: sort },
       {
         $facet: {
           data: [
             { $skip: skip },
-            { $limit: limiteInt },
-            {
-              $project: {
-                _id: 0,
-                codigo: 1,
-                nombre: 1,
-                categoria: 1,
-                marca: 1,
-                precio_lista_con_iva: 1,
-                precio: 1,
-                image: 1,
-                imagen: 1,
-                aplicaciones: 1,
-                "detalles_tecnicos.Posición de la pieza": 1,
-                tiene_precio_valido: 1
-              }
-            }
+            { $limit: limiteInt }
           ],
-          totalCount: [{ $count: "count" }]
+          totalCount: [
+            { $count: "count" }
+          ]
         }
       }
     ];
 
-    // Timeout adaptativo
-    const queryTimeout = req.isColdStart ? 45000 : 25000;
-    
-    const result = await Promise.race([
-      collection.aggregate(pipeline).toArray(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error(`Query timeout after ${queryTimeout}ms`)), queryTimeout)
-      )
-    ]);
-
-    const productos = result[0]?.data || [];
-    const totalProductos = result[0]?.totalCount[0]?.count || 0;
+    const result = await collection.aggregate(pipeline).toArray();
+    const productos = result[0].data;
+    const totalProductos = result[0].totalCount[0]?.count || 0;
     const totalPaginas = Math.ceil(totalProductos / limiteInt);
-    const responseTime = Date.now() - startTime;
 
-    console.log(`✅ [PRODUCTOS] ${productos.length} productos encontrados (${responseTime}ms)`);
+    console.log(`✅ [PRODUCTOS] ${productos.length} productos encontrados (${totalProductos} total)`);
 
     res.json({
       success: true,
@@ -511,104 +361,48 @@ router.get('/productos', async (req, res) => {
         hasNextPage: parseInt(pagina) < totalPaginas,
         hasPrevPage: parseInt(pagina) > 1
       },
-      filters: { categoria, marca, modelo, version, posicion },
-      performance: {
-        responseTime: `${responseTime}ms`,
-        coldStart: req.isColdStart,
-        uptime: req.uptime
-      },
-      server: {
-        status: req.isColdStart ? 'warming-up' : 'ready'
+      filters: {
+        categoria, marca, modelo, version, posicion
       },
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    const responseTime = Date.now() - startTime;
-    console.error(`❌ [PRODUCTOS] Error (${responseTime}ms):`, error.message);
-
-    // Respuesta de fallback
+    console.error('❌ [PRODUCTOS] Error:', error);
     res.status(500).json({
       success: false,
-      error: 'Error al obtener productos',
-      fallback: {
-        success: true,
-        data: FALLBACK_DATA.productos,
-        pagination: {
-          currentPage: 1,
-          totalPages: 1,
-          totalProducts: FALLBACK_DATA.productos.length,
-          productsPerPage: FALLBACK_DATA.productos.length,
-          hasNextPage: false,
-          hasPrevPage: false
-        },
-        reason: req.isColdStart ? 'cold-start-error' : 'database-error'
-      },
-      performance: {
-        responseTime: `${responseTime}ms`,
-        error: error.message,
-        coldStart: req.isColdStart
-      },
-      timestamp: new Date().toISOString()
+      error: error.message || 'Error al obtener productos'
     });
   }
 });
 
-// 🧠 METADATOS PARA BÚSQUEDA - Optimizado
-router.get('/metadatos-busqueda', async (req, res) => {
-  const startTime = Date.now();
-  
+// 🧠 METADATOS PARA BÚSQUEDA
+app.get('/api/metadatos-busqueda', async (req, res) => {
   try {
-    console.log('🧠 [METADATOS-BÚSQUEDA] Generando índice...');
+    console.log('🧠 [METADATOS-BÚSQUEDA] Cargando...');
 
-    // Fallback rápido para cold start con errores
-    if (req.isColdStart && healthStatus.errors.length > 2) {
-      console.log('🥶 [METADATOS] Cold start con errores - Usando fallback');
-      
-      return res.json({
-        success: true,
-        count: FALLBACK_DATA.metadatos.codes.length,
-        searchIndex: FALLBACK_DATA.metadatos,
-        fallback: {
-          active: true,
-          reason: 'cold-start-with-errors'
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const metadatos = await collection.find(
+      { tiene_precio_valido: true },
+      {
+        projection: {
+          codigo: 1,
+          categoria: 1,
+          marca: 1,
+          "aplicaciones.marca": 1,
+          "aplicaciones.modelo": 1,
+          _id: 0
         },
-        server: { coldStart: true },
-        timestamp: new Date().toISOString()
-      });
-    }
+        limit: 1000
+      }
+    ).toArray();
 
-    const client = await connectWithRetry(req.isColdStart ? 2 : 4, 'metadatos');
-    const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
-
-    // Límites adaptativos
-    const documentLimit = req.isColdStart ? 1500 : 3000;
-    const queryTimeout = req.isColdStart ? 30000 : 20000;
-
-    // Query optimizada
-    const metadatos = await Promise.race([
-      collection.find(
-        { tiene_precio_valido: true },
-        {
-          projection: {
-            codigo: 1,
-            categoria: 1,
-            marca: 1,
-            "aplicaciones.marca": 1,
-            "aplicaciones.modelo": 1,
-            _id: 0
-          },
-          limit: documentLimit
-        }
-      ).toArray(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error(`Metadatos timeout after ${queryTimeout}ms`)), queryTimeout)
-      )
-    ]);
-
-    // Procesar de forma eficiente
+    // Crear índice de búsqueda
     const searchIndex = {
-      codes: new Set(),
+      codes: [],
       brands: new Set(),
       models: new Set(),
       categories: new Set(),
@@ -616,189 +410,109 @@ router.get('/metadatos-busqueda', async (req, res) => {
     };
 
     metadatos.forEach(product => {
-      if (product.codigo) searchIndex.codes.add(product.codigo);
-      if (product.categoria) searchIndex.categories.add(product.categoria);
+      searchIndex.codes.push(product.codigo);
+      searchIndex.categories.add(product.categoria);
       if (product.marca) searchIndex.brands.add(product.marca);
       
-      if (product.aplicaciones && Array.isArray(product.aplicaciones)) {
+      if (product.aplicaciones) {
         product.aplicaciones.forEach(app => {
-          if (app.marca) {
-            searchIndex.brands.add(app.marca);
-            if (app.modelo) {
-              searchIndex.models.add(app.modelo);
-              searchIndex.vehicles.add(`${app.marca} ${app.modelo}`);
-            }
+          if (app.marca) searchIndex.brands.add(app.marca);
+          if (app.modelo) searchIndex.models.add(app.modelo);
+          if (app.marca && app.modelo) {
+            searchIndex.vehicles.add(`${app.marca} ${app.modelo}`);
           }
         });
       }
     });
 
-    // Convertir a arrays con límites
-    const maxItems = req.isColdStart ? 500 : 1000;
+    // Convertir Sets a Arrays
     const finalIndex = {
-      codes: Array.from(searchIndex.codes).slice(0, maxItems),
-      brands: Array.from(searchIndex.brands).sort().slice(0, 200),
-      models: Array.from(searchIndex.models).sort().slice(0, 400),
+      codes: searchIndex.codes.slice(0, 500),
+      brands: Array.from(searchIndex.brands).sort().slice(0, 100),
+      models: Array.from(searchIndex.models).sort().slice(0, 200),
       categories: Array.from(searchIndex.categories).sort(),
-      vehicles: Array.from(searchIndex.vehicles).sort().slice(0, 600)
+      vehicles: Array.from(searchIndex.vehicles).sort().slice(0, 300)
     };
 
-    const responseTime = Date.now() - startTime;
-
-    console.log(`✅ [METADATOS] Índice generado (${responseTime}ms): ${metadatos.length} productos`);
+    console.log(`✅ [METADATOS-BÚSQUEDA] ${metadatos.length} productos indexados`);
 
     res.json({
       success: true,
       count: metadatos.length,
       searchIndex: finalIndex,
-      stats: {
-        totalProducts: metadatos.length,
-        brands: finalIndex.brands.length,
-        models: finalIndex.models.length,
-        categories: finalIndex.categories.length,
-        vehicles: finalIndex.vehicles.length
-      },
-      performance: {
-        responseTime: `${responseTime}ms`,
-        coldStart: req.isColdStart,
-        documentLimit: documentLimit
-      },
-      server: {
-        status: req.isColdStart ? 'warming-up' : 'ready'
-      },
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    const responseTime = Date.now() - startTime;
-    console.error(`❌ [METADATOS] Error (${responseTime}ms):`, error.message);
-
+    console.error('❌ [METADATOS-BÚSQUEDA] Error:', error);
     res.status(500).json({
       success: false,
-      error: 'Error al obtener metadatos',
-      fallback: {
-        success: true,
-        count: FALLBACK_DATA.metadatos.codes.length,
-        searchIndex: FALLBACK_DATA.metadatos,
-        reason: req.isColdStart ? 'cold-start-error' : 'database-error'
-      },
-      performance: {
-        responseTime: `${responseTime}ms`,
-        error: error.message,
-        coldStart: req.isColdStart
-      },
-      timestamp: new Date().toISOString()
+      error: error.message || 'Error al obtener metadatos de búsqueda'
     });
   }
 });
 
-// 🔍 PRODUCTO INDIVIDUAL
-router.get('/producto/:codigo', async (req, res) => {
-  const startTime = Date.now();
-  
+app.get('/api/producto/:codigo', async (req, res) => {
   try {
     const { codigo } = req.params;
 
     if (!codigo) {
       return res.status(400).json({
         success: false,
-        error: 'Código de producto requerido',
-        coldStart: req.isColdStart
+        error: 'Código de producto requerido'
       });
     }
 
-    console.log('🔍 [PRODUCTO] Buscando:', codigo);
+    console.log('🔍 [PRODUCTO] Buscando producto:', codigo);
 
-    const client = await connectWithRetry(req.isColdStart ? 2 : 3, 'producto');
-    const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
 
-    const queryTimeout = req.isColdStart ? 15000 : 8000;
-    
-    const producto = await Promise.race([
-      collection.findOne(
-        { codigo: codigo },
-        { projection: { _id: 0 } }
-      ),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error(`Producto timeout after ${queryTimeout}ms`)), queryTimeout)
-      )
-    ]);
-
-    const responseTime = Date.now() - startTime;
+    const producto = await collection.findOne(
+      { codigo: codigo },
+      { projection: { _id: 0 } }
+    );
 
     if (!producto) {
-      console.log(`❌ [PRODUCTO] No encontrado: ${codigo}`);
+      console.log('❌ [PRODUCTO] No encontrado:', codigo);
       return res.status(404).json({
         success: false,
-        error: 'Producto no encontrado',
-        codigo: codigo,
-        performance: {
-          responseTime: `${responseTime}ms`,
-          coldStart: req.isColdStart
-        }
+        error: 'Producto no encontrado'
       });
     }
 
-    console.log(`✅ [PRODUCTO] Encontrado: ${codigo} (${responseTime}ms)`);
+    console.log('✅ [PRODUCTO] Encontrado:', codigo);
 
     res.json({
       success: true,
       data: producto,
-      performance: {
-        responseTime: `${responseTime}ms`,
-        coldStart: req.isColdStart
-      },
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    const responseTime = Date.now() - startTime;
-    console.error(`❌ [PRODUCTO] Error (${responseTime}ms):`, error.message);
-
+    console.error('❌ [PRODUCTO] Error:', error);
     res.status(500).json({
       success: false,
-      error: 'Error al obtener producto',
-      codigo: req.params.codigo,
-      fallback: {
-        success: true,
-        data: FALLBACK_DATA.productos[0],
-        reason: req.isColdStart ? 'cold-start-error' : 'product-error'
-      },
-      performance: {
-        responseTime: `${responseTime}ms`,
-        error: error.message,
-        coldStart: req.isColdStart
-      },
-      timestamp: new Date().toISOString()
+      error: error.message || 'Error al obtener producto'
     });
   }
 });
 
-// 🚗 FILTROS VEHÍCULO
-router.get('/filtros/:tipo', async (req, res) => {
-  const startTime = Date.now();
-  
+
+app.get('/api/filtros/:tipo', async (req, res) => {
   try {
     const { tipo } = req.params;
     const { categoria, marca, modelo } = req.query;
 
-    const tiposValidos = ['marcas', 'modelos', 'versiones', 'posiciones'];
-    if (!tiposValidos.includes(tipo)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Tipo de filtro inválido',
-        tiposValidos,
-        coldStart: req.isColdStart
-      });
-    }
-
     console.log('🚗 [FILTROS] Obteniendo:', tipo, 'para:', { categoria, marca, modelo });
 
-    const client = await connectWithRetry(req.isColdStart ? 2 : 3, 'filtros');
-    const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
 
     // Construir filtros base
-    const filtros = { tiene_precio_valido: true };
+    const filtros = {};
     
     if (categoria && categoria !== 'todos') {
       if (CATEGORIAS[categoria]) {
@@ -809,10 +523,8 @@ router.get('/filtros/:tipo', async (req, res) => {
     }
 
     let pipeline = [{ $match: filtros }];
-    const timeoutMs = req.isColdStart ? 15000 : 10000;
-    const resultLimit = req.isColdStart ? 50 : 100;
 
-    // Agregación según el tipo
+    // Agregación según el tipo solicitado
     switch (tipo) {
       case 'marcas':
         pipeline.push(
@@ -820,7 +532,6 @@ router.get('/filtros/:tipo', async (req, res) => {
           { $group: { _id: "$aplicaciones.marca" } },
           { $match: { _id: { $ne: null, $ne: "" } } },
           { $sort: { _id: 1 } },
-          { $limit: resultLimit },
           { $project: { _id: 0, marca: "$_id" } }
         );
         break;
@@ -829,8 +540,7 @@ router.get('/filtros/:tipo', async (req, res) => {
         if (!marca) {
           return res.status(400).json({ 
             success: false, 
-            error: 'Marca requerida para obtener modelos',
-            coldStart: req.isColdStart
+            error: 'Marca requerida para obtener modelos' 
           });
         }
         pipeline.push(
@@ -839,7 +549,6 @@ router.get('/filtros/:tipo', async (req, res) => {
           { $group: { _id: "$aplicaciones.modelo" } },
           { $match: { _id: { $ne: null, $ne: "" } } },
           { $sort: { _id: 1 } },
-          { $limit: resultLimit },
           { $project: { _id: 0, modelo: "$_id" } }
         );
         break;
@@ -848,8 +557,7 @@ router.get('/filtros/:tipo', async (req, res) => {
         if (!marca || !modelo) {
           return res.status(400).json({ 
             success: false, 
-            error: 'Marca y modelo requeridos para obtener versiones',
-            coldStart: req.isColdStart
+            error: 'Marca y modelo requeridos para obtener versiones' 
           });
         }
         pipeline.push(
@@ -861,12 +569,12 @@ router.get('/filtros/:tipo', async (req, res) => {
           { $group: { _id: "$aplicaciones.version" } },
           { $match: { _id: { $ne: null, $ne: "" } } },
           { $sort: { _id: 1 } },
-          { $limit: Math.min(resultLimit, 30) },
           { $project: { _id: 0, version: "$_id" } }
         );
         break;
 
       case 'posiciones':
+        // Agregar filtros de vehículo si existen
         if (marca) filtros["aplicaciones.marca"] = marca;
         if (modelo) filtros["aplicaciones.modelo"] = modelo;
         
@@ -875,22 +583,20 @@ router.get('/filtros/:tipo', async (req, res) => {
           { $group: { _id: "$detalles_tecnicos.Posición de la pieza" } },
           { $match: { _id: { $ne: null, $ne: "", $exists: true } } },
           { $sort: { _id: 1 } },
-          { $limit: Math.min(resultLimit, 30) },
           { $project: { _id: 0, posicion: "$_id" } }
         ];
         break;
+
+      default:
+        return res.status(400).json({
+          success: false,
+          error: 'Tipo de filtro inválido. Use: marcas, modelos, versiones, posiciones'
+        });
     }
 
-    const resultado = await Promise.race([
-      collection.aggregate(pipeline).toArray(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error(`Filtros timeout after ${timeoutMs}ms`)), timeoutMs)
-      )
-    ]);
+    const resultado = await collection.aggregate(pipeline).toArray();
 
-    const responseTime = Date.now() - startTime;
-
-    console.log(`✅ [FILTROS] ${resultado.length} ${tipo} encontrados (${responseTime}ms)`);
+    console.log(`✅ [FILTROS] ${resultado.length} ${tipo} encontrados`);
 
     res.json({
       success: true,
@@ -898,45 +604,20 @@ router.get('/filtros/:tipo', async (req, res) => {
       data: resultado,
       count: resultado.length,
       filters: { categoria, marca, modelo },
-      performance: {
-        responseTime: `${responseTime}ms`,
-        coldStart: req.isColdStart,
-        resultLimit: resultLimit
-      },
-      server: {
-        status: req.isColdStart ? 'warming-up' : 'ready'
-      },
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    const responseTime = Date.now() - startTime;
-    console.error(`❌ [FILTROS] Error (${responseTime}ms):`, error.message);
-
+    console.error('❌ [FILTROS] Error:', error);
     res.status(500).json({
       success: false,
-      error: 'Error al obtener filtros',
-      fallback: {
-        success: true,
-        tipo: req.params.tipo,
-        data: [],
-        count: 0,
-        reason: req.isColdStart ? 'cold-start-error' : 'filter-error'
-      },
-      performance: {
-        responseTime: `${responseTime}ms`,
-        error: error.message,
-        coldStart: req.isColdStart
-      },
-      timestamp: new Date().toISOString()
+      error: error.message || 'Error al obtener filtros'
     });
   }
 });
 
-// 🔍 BÚSQUEDA SIMPLIFICADA
-router.get('/busqueda', async (req, res) => {
-  const startTime = Date.now();
-  
+
+app.get('/api/busqueda', async (req, res) => {
   try {
     const { 
       q,           
@@ -947,17 +628,17 @@ router.get('/busqueda', async (req, res) => {
     if (!q || q.trim().length < 2) {
       return res.status(400).json({
         success: false,
-        error: 'Query de búsqueda requerida (mínimo 2 caracteres)',
-        coldStart: req.isColdStart
+        error: 'Query de búsqueda requerida (mínimo 2 caracteres)'
       });
     }
 
     console.log('🔍 [BÚSQUEDA] Query:', q);
 
-    const client = await connectWithRetry(req.isColdStart ? 2 : 4, 'busqueda');
-    const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
 
-    // Búsqueda simplificada pero efectiva
+    // Búsqueda simple pero efectiva
     const searchTerms = normalizeText(q.trim()).split(' ').filter(t => t.length > 1);
     
     const matchConditions = {
@@ -965,7 +646,7 @@ router.get('/busqueda', async (req, res) => {
       $or: [
         { codigo: { $regex: q, $options: 'i' } },
         { nombre: { $regex: q, $options: 'i' } },
-        ...searchTerms.slice(0, req.isColdStart ? 2 : 4).map(term => ({
+        ...searchTerms.slice(0, 4).map(term => ({
           $or: [
             { codigo: { $regex: term, $options: 'i' } },
             { nombre: { $regex: term, $options: 'i' } },
@@ -976,8 +657,7 @@ router.get('/busqueda', async (req, res) => {
       ]
     };
 
-    const searchTimeout = req.isColdStart ? 20000 : 15000;
-    const maxResults = Math.min(parseInt(limit), req.isColdStart ? 30 : 50);
+    const maxResults = Math.min(parseInt(limit), 50);
 
     const pipeline = [
       { $match: matchConditions },
@@ -995,21 +675,15 @@ router.get('/busqueda', async (req, res) => {
           image: 1,
           imagen: 1,
           aplicaciones: 1,
+          detalles_tecnicos: 1,
           tiene_precio_valido: 1
         }
       }
     ];
 
-    const results = await Promise.race([
-      collection.aggregate(pipeline).toArray(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error(`Search timeout after ${searchTimeout}ms`)), searchTimeout)
-      )
-    ]);
+    const results = await collection.aggregate(pipeline).toArray();
 
-    const responseTime = Date.now() - startTime;
-
-    console.log(`✅ [BÚSQUEDA] ${results.length} resultados (${responseTime}ms)`);
+    console.log(`✅ [BÚSQUEDA] ${results.length} resultados encontrados`);
 
     res.json({
       success: true,
@@ -1017,47 +691,20 @@ router.get('/busqueda', async (req, res) => {
       results: results,
       totalResults: results.length,
       hasMore: results.length >= maxResults,
-      performance: {
-        responseTime: `${responseTime}ms`,
-        searchTerms: searchTerms.length,
-        coldStart: req.isColdStart,
-        maxResults: maxResults
-      },
-      server: {
-        status: req.isColdStart ? 'warming-up' : 'ready'
-      },
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    const responseTime = Date.now() - startTime;
-    console.error(`❌ [BÚSQUEDA] Error (${responseTime}ms):`, error.message);
-
+    console.error('❌ [BÚSQUEDA] Error:', error);
     res.status(500).json({
       success: false,
-      error: 'Error en búsqueda',
-      fallback: {
-        success: true,
-        query: req.query.q,
-        results: [],
-        totalResults: 0,
-        hasMore: false,
-        reason: req.isColdStart ? 'cold-start-error' : 'search-error'
-      },
-      performance: {
-        responseTime: `${responseTime}ms`,
-        error: error.message,
-        coldStart: req.isColdStart
-      },
-      timestamp: new Date().toISOString()
+      error: error.message || 'Error en búsqueda'
     });
   }
 });
 
 // 💡 SUGERENCIAS
-router.get('/sugerencias', async (req, res) => {
-  const startTime = Date.now();
-  
+app.get('/api/sugerencias', async (req, res) => {
   try {
     const { q, limit = 8 } = req.query;
 
@@ -1065,74 +712,51 @@ router.get('/sugerencias', async (req, res) => {
       return res.json({
         success: true,
         suggestions: [],
-        query: q || '',
-        coldStart: req.isColdStart
+        query: q || ''
       });
     }
 
     console.log('💡 [SUGERENCIAS] Para:', q);
 
-    const client = await connectWithRetry(req.isColdStart ? 1 : 2, 'sugerencias');
-    const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
 
     const suggestions = new Set();
     const normalizedQuery = normalizeText(q);
-    const maxSuggestions = Math.min(parseInt(limit), req.isColdStart ? 5 : 8);
-    const queryTimeout = req.isColdStart ? 8000 : 5000;
+    const maxSuggestions = Math.min(parseInt(limit), 8);
 
     // Búsqueda simple de códigos
-    const codigoMatches = await Promise.race([
-      collection.find(
-        { 
-          codigo: { $regex: `^${normalizedQuery}`, $options: 'i' },
-          tiene_precio_valido: true
-        },
-        { projection: { codigo: 1, _id: 0 }, limit: maxSuggestions }
-      ).toArray(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error(`Sugerencias timeout after ${queryTimeout}ms`)), queryTimeout)
-      )
-    ]);
+    const codigoMatches = await collection.find(
+      { 
+        codigo: { $regex: `^${normalizedQuery}`, $options: 'i' },
+        tiene_precio_valido: true
+      },
+      { projection: { codigo: 1, _id: 0 }, limit: maxSuggestions }
+    ).toArray();
 
     codigoMatches.forEach(p => suggestions.add(p.codigo));
 
     const finalSuggestions = Array.from(suggestions).slice(0, maxSuggestions);
-    const responseTime = Date.now() - startTime;
 
-    console.log(`✅ [SUGERENCIAS] ${finalSuggestions.length} resultados (${responseTime}ms)`);
+    console.log(`✅ [SUGERENCIAS] ${finalSuggestions.length} resultados`);
 
     res.json({
       success: true,
       query: q.trim(),
       suggestions: finalSuggestions,
       count: finalSuggestions.length,
-      performance: {
-        responseTime: `${responseTime}ms`,
-        coldStart: req.isColdStart,
-        maxSuggestions: maxSuggestions
-      },
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    const responseTime = Date.now() - startTime;
-    console.error(`❌ [SUGERENCIAS] Error (${responseTime}ms):`, error.message);
-
+    console.error('❌ [SUGERENCIAS] Error:', error);
     res.json({
       success: true,
       query: req.query.q || '',
       suggestions: [],
       count: 0,
-      performance: {
-        responseTime: `${responseTime}ms`,
-        error: error.message,
-        coldStart: req.isColdStart
-      },
-      fallback: {
-        active: true,
-        reason: req.isColdStart ? 'cold-start-error' : 'suggestions-error'
-      },
-      timestamp: new Date().toISOString()
+      error: error.message
     });
   }
 });
@@ -1215,6 +839,7 @@ router.get('/metadatos', async (req, res) => {
 
 // ===== FUNCIONES AUXILIARES =====
 
+// ===== FUNCIONES AUXILIARES =====
 function normalizeText(text) {
   if (!text) return '';
   try {
@@ -1231,6 +856,39 @@ function normalizeText(text) {
     return text.toString().toLowerCase().trim();
   }
 }
+
+// ===== MANEJO DE ERRORES =====
+app.use((error, req, res, next) => {
+  console.error('❌ [ERROR HANDLER]:', {
+    message: error.message,
+    url: req.url,
+    method: req.method,
+    timestamp: new Date().toISOString()
+  });
+
+  if (error.name === 'MongoTimeoutError') {
+    return res.status(504).json({
+      success: false,
+      error: 'Timeout de base de datos',
+      retry: true
+    });
+  }
+
+  if (error.name === 'MongoNetworkError') {
+    return res.status(503).json({
+      success: false,
+      error: 'Error de conexión a base de datos',
+      retry: true
+    });
+  }
+
+  res.status(500).json({
+    success: false,
+    error: 'Error interno del servidor',
+    timestamp: new Date().toISOString()
+  });
+});
+
 
 // ===== MANEJO DE ERRORES =====
 
@@ -1320,6 +978,38 @@ async function gracefulDisconnect() {
     cachedClient = null;
   }
 }
+
+process.on('SIGINT', async () => {
+  console.log('🛑 [SHUTDOWN] Recibida señal SIGINT...');
+  await gracefulDisconnect();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('🛑 [SHUTDOWN] Recibida señal SIGTERM...');
+  await gracefulDisconnect();
+  process.exit(0);
+});
+
+// ===== INICIAR SERVIDOR =====
+app.listen(PORT, () => {
+  console.log('\n' + '='.repeat(60));
+  console.log('🚀 BACKEND MONGODB INICIADO');
+  console.log('='.repeat(60));
+  console.log(`🌐 Servidor ejecutándose en: http://localhost:${PORT}`);
+  console.log(`📊 Base de datos: ${DB_NAME}.${COLLECTION_NAME}`);
+  console.log('🔗 Endpoints disponibles:');
+  console.log(`  • GET http://localhost:${PORT}/api/ping`);
+  console.log(`  • GET http://localhost:${PORT}/api/productos`);
+  console.log(`  • GET http://localhost:${PORT}/api/busqueda?q=...`);
+  console.log(`  • GET http://localhost:${PORT}/api/filtros/marcas`);
+  console.log(`  • GET http://localhost:${PORT}/api/producto/:codigo`);
+  console.log(`  • GET http://localhost:${PORT}/api/sugerencias?q=...`);
+  console.log(`  • GET http://localhost:${PORT}/api/metadatos-busqueda`);
+  console.log('='.repeat(60));
+  console.log('✅ Listo para recibir peticiones del frontend\n');
+});
+
 
 process.on('SIGINT', async () => {
   console.log('🛑 [SHUTDOWN] Recibida señal SIGINT...');
@@ -1448,3 +1138,4 @@ console.log('⏱️ Cold start detection activo\n');
 healthStatus.status = 'initialized';
 
 module.exports = router;
+module.exports = app;
