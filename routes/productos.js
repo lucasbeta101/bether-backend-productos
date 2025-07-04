@@ -213,6 +213,21 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
 // =================================================================
 
 // 1. RUTA DE BÚSQUEDA INTELIGENTE
+router.get('/metadatos', async (req, res) => {
+  try {
+      console.log('📋 [METADATOS] Iniciando carga de metadatos para el catálogo...');
+      const client = await connectToMongoDB();
+      const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
+      const metadatos = await collection.find({}, {
+          projection: { codigo: 1, categoria: 1, marca: 1, nombre: 1, aplicaciones: 1, "detalles_tecnicos.Posición de la pieza": 1, _id: 0 }
+      }).toArray();
+      console.log(`✅ [METADATOS] ${metadatos.length} metadatos cargados.`);
+      res.json({ success: true, count: metadatos.length, data: metadatos });
+  } catch (error) {
+      console.error('❌ [METADATOS] Error:', error);
+      res.status(500).json({ success: false, error: 'Error al obtener metadatos' });
+  }
+});
 router.get('/busqueda', async (req, res) => {
     try {
         const { q, limit = 20, offset = 0 } = req.query;
