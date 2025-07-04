@@ -166,7 +166,7 @@ function parseNaturalQuery(query) {
       'delantero', 'trasero', 'izquierdo', 'derecho', 'superior', 'inferior',
       'del', 'pos', 'izq', 'der', 'sup', 'inf', // Abreviaturas
       'lado', 'porton', 'capot', 'baul', 'exterior', 'interior', 'diferencial',
-      'extremo', 'fuelle', 'corona', 'lateral' // Nuevas palabras clave de tu lista
+      'extremo', 'fuelle', 'corona', 'lateral','delantera', 'trasera', 'izquierda', 'derecha', 'posterior', 'anterior'
   ];
   
   const words = normalizeText(query).split(' ').filter(word => !STOP_WORDS.includes(word) && word.length > 1);
