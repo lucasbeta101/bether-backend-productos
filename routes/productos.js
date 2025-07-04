@@ -110,7 +110,6 @@ router.get('/ping', async (req, res) => {
   }
 });
 
-// 📋 METADATOS - Para filtros
 router.get('/metadatos', async (req, res) => {
   try {
     console.log('📋 [METADATOS] Iniciando carga de metadatos...');
@@ -119,7 +118,7 @@ router.get('/metadatos', async (req, res) => {
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
-    // ✅ PROYECCIÓN: Solo campos necesarios para filtros
+    // ✅ PROYECCIÓN: Campos necesarios INCLUYENDO PRECIOS
     const metadatos = await collection.find({}, {
       projection: {
         codigo: 1,
@@ -128,11 +127,39 @@ router.get('/metadatos', async (req, res) => {
         nombre: 1,
         aplicaciones: 1,
         "detalles_tecnicos.Posición de la pieza": 1,
+        // 🆕 AGREGAR CAMPOS DE PRECIO
+        precio_lista_con_iva: 1,
+        precio_numerico: 1,
+        tiene_precio_valido: 1,
+        precio: 1,
+        price: 1,
+        precio_base: 1,
+        imagen: 1,
+        url: 1,
+        equivalencias: 1,
+        detalles_tecnicos: 1,
         _id: 0 // Excluir _id para reducir tamaño
       }
     }).toArray();
 
     console.log(`✅ [METADATOS] ${metadatos.length} metadatos cargados`);
+
+    // 🔍 DEBUG: Verificar que los primeros productos tengan precios
+    if (metadatos.length > 0) {
+      console.log('🔍 [METADATOS] Verificando precios en primeros 3 productos:');
+      metadatos.slice(0, 3).forEach((producto, index) => {
+        console.log(`  Producto ${index + 1}:`, {
+          codigo: producto.codigo,
+          precio_lista_con_iva: producto.precio_lista_con_iva,
+          precio_numerico: producto.precio_numerico,
+          tiene_precio_valido: producto.tiene_precio_valido
+        });
+      });
+
+      // Contar productos con precio válido
+      const conPrecio = metadatos.filter(p => p.tiene_precio_valido === true).length;
+      console.log(`📊 [METADATOS] ${conPrecio} de ${metadatos.length} productos tienen precio válido`);
+    }
 
     res.json({
       success: true,
@@ -150,6 +177,166 @@ router.get('/metadatos', async (req, res) => {
   }
 });
 
+router.get('/productos-validos', async (req, res) => {
+  try {
+    const { 
+      categoria, 
+      marca, 
+      modelo, 
+      version, 
+      posicion,
+      pagina = 1, 
+      limite = 15,
+      ordenar = 'codigo'
+    } = req.query;
+
+    console.log('📦 [PRODUCTOS-VALIDOS] Parámetros:', {
+      categoria, marca, modelo, version, posicion, pagina, limite
+    });
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // ✅ CONSTRUIR FILTROS DINÁMICAMENTE
+    const filtros = {};
+
+    // Filtro por categoría
+    if (categoria && categoria !== 'todos') {
+      if (CATEGORIAS[categoria]) {
+        // Es categoría principal, buscar en subcategorías
+        filtros.categoria = { $in: CATEGORIAS[categoria] };
+      } else {
+        // Es subcategoría específica
+        filtros.categoria = categoria;
+      }
+    }
+
+    // Filtros de vehículo
+    if (marca || modelo || version) {
+      const aplicacionesFiltro = {};
+      if (marca) aplicacionesFiltro["aplicaciones.marca"] = marca;
+      if (modelo) aplicacionesFiltro["aplicaciones.modelo"] = modelo;
+      if (version) aplicacionesFiltro["aplicaciones.version"] = version;
+      
+      Object.assign(filtros, aplicacionesFiltro);
+    }
+
+    // Filtro por posición
+    if (posicion) {
+      filtros["detalles_tecnicos.Posición de la pieza"] = posicion;
+    }
+
+    // 🆕 SOLO PRODUCTOS CON PRECIO VÁLIDO
+    filtros.tiene_precio_valido = true;
+
+    console.log('🔍 [PRODUCTOS-VALIDOS] Filtros construidos:', JSON.stringify(filtros, null, 2));
+
+    // ✅ PAGINACIÓN
+    const skip = (parseInt(pagina) - 1) * parseInt(limite);
+    const limiteInt = parseInt(limite);
+
+    // ✅ ORDENAMIENTO
+    const sort = {};
+    sort[ordenar] = 1;
+
+    // ✅ EJECUTAR CONSULTA CON AGREGACIÓN
+    const pipeline = [
+      { $match: filtros },
+      { $sort: sort },
+      {
+        $facet: {
+          data: [
+            { $skip: skip },
+            { $limit: limiteInt }
+          ],
+          totalCount: [
+            { $count: "count" }
+          ]
+        }
+      }
+    ];
+
+    const result = await collection.aggregate(pipeline).toArray();
+    const productos = result[0].data;
+    const totalProductos = result[0].totalCount[0]?.count || 0;
+    const totalPaginas = Math.ceil(totalProductos / limiteInt);
+
+    console.log(`✅ [PRODUCTOS-VALIDOS] ${productos.length} productos encontrados (${totalProductos} total)`);
+
+    res.json({
+      success: true,
+      data: productos,
+      pagination: {
+        currentPage: parseInt(pagina),
+        totalPages: totalPaginas,
+        totalProducts: totalProductos,
+        productsPerPage: limiteInt,
+        hasNextPage: parseInt(pagina) < totalPaginas,
+        hasPrevPage: parseInt(pagina) > 1
+      },
+      filters: {
+        categoria, marca, modelo, version, posicion
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [PRODUCTOS-VALIDOS] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al obtener productos válidos'
+    });
+  }
+});
+
+// 🔍 ENDPOINT DE DEBUG: Analizar estructura de precios
+router.get('/debug/precios', async (req, res) => {
+  try {
+    console.log('🔍 [DEBUG PRECIOS] Analizando estructura...');
+    
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Obtener muestra de productos
+    const muestra = await collection.find({}).limit(10).toArray();
+
+    // Analizar campos de precio
+    const analisis = {
+      totalProductos: await collection.countDocuments(),
+      conPrecioValido: await collection.countDocuments({ tiene_precio_valido: true }),
+      sinPrecioValido: await collection.countDocuments({ tiene_precio_valido: false }),
+      muestraProductos: muestra.map(p => ({
+        codigo: p.codigo,
+        nombre: p.nombre,
+        precio_lista_con_iva: p.precio_lista_con_iva,
+        precio_numerico: p.precio_numerico,
+        tiene_precio_valido: p.tiene_precio_valido,
+        todosLosCampos: Object.keys(p)
+      }))
+    };
+
+    console.log('📊 [DEBUG PRECIOS] Análisis completado:', {
+      total: analisis.totalProductos,
+      conPrecio: analisis.conPrecioValido,
+      sinPrecio: analisis.sinPrecioValido
+    });
+
+    res.json({
+      success: true,
+      analisis: analisis,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [DEBUG PRECIOS] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 // 📦 PRODUCTOS - Con filtros y paginación
 router.get('/productos', async (req, res) => {
   try {
