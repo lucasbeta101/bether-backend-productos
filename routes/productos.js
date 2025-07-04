@@ -148,9 +148,18 @@ function checkYearInRange(versionString, targetYear) {
 }
 
 function parseNaturalQuery(query) {
+  console.log('🧐 [Parser v6] Iniciando parseo para:', query);
   const STOP_WORDS = ['para', 'de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'con', 'mi', 'auto', 'modelo'];
+  
+  // ✅ LISTA DE KEYWORDS ACTUALIZADA CON TODAS LAS POSICIONES
   const productKeywords = ['amortiguador', 'pastilla', 'freno', 'disco', 'cazoleta', 'bieleta', 'rotula', 'embrague', 'brazo', 'extremo', 'axial', 'homocinetica', 'rodamiento', 'maza', 'semieje', 'soporte', 'parrilla', 'barra', 'caja', 'bomba', 'suspension'];
-  const positionKeywords = ['delantero', 'trasero', 'izquierdo', 'derecho', 'superior', 'inferior', 'del', 'pos', 'izq', 'der', 'sup', 'inf'];
+  const positionKeywords = [
+      'delantero', 'trasero', 'izquierdo', 'derecho', 'superior', 'inferior',
+      'del', 'pos', 'izq', 'der', 'sup', 'inf', // Abreviaturas
+      'lado', 'porton', 'capot', 'baul', 'exterior', 'interior', 'diferencial',
+      'extremo', 'fuelle', 'corona', 'lateral' // Nuevas palabras clave de tu lista
+  ];
+  
   const words = normalizeText(query).split(' ').filter(word => !STOP_WORDS.includes(word) && word.length > 1);
   const result = { product: null, position: null, year: null, vehicleTerms: [], isStructured: false, freeText: query };
   const remainingWords = [];
@@ -159,6 +168,7 @@ function parseNaturalQuery(query) {
       if (!result.product && productKeywords.includes(word.replace(/s$/, ''))) {
           result.product = word.replace(/s$/, '');
       } else if (!result.position && positionKeywords.includes(word)) {
+          // Si la palabra es un indicador de posición, la guardamos.
           result.position = word;
       } else if (!result.year && /^\d{4}$/.test(word)) { // Año de 4 dígitos
           result.year = word;
@@ -172,7 +182,7 @@ function parseNaturalQuery(query) {
   if (result.product || result.position || result.year || result.vehicleTerms.length > 0) {
       result.isStructured = true;
   }
-  console.log('🧐 [Parser con Rangos] Resultado:', result);
+  console.log('🧐 [Parser v6] Resultado:', result);
   return result;
 }
 
