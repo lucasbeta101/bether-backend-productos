@@ -382,4 +382,44 @@ router.get('/ping', async (req, res) => {
     }
 });
 
+router.get('/metadatos', async (req, res) => {
+  try {
+    console.log('📋 [METADATOS] Iniciando carga de metadatos...');
+    
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // ✅ PROYECCIÓN: Solo campos necesarios para filtros
+    const metadatos = await collection.find({}, {
+      projection: {
+        codigo: 1,
+        categoria: 1,
+        marca: 1,
+        nombre: 1,
+        aplicaciones: 1,
+        "detalles_tecnicos.Posición de la pieza": 1,
+        _id: 0 // Excluir _id para reducir tamaño
+      }
+    }).toArray();
+
+    console.log(`✅ [METADATOS] ${metadatos.length} metadatos cargados`);
+
+    res.json({
+      success: true,
+      count: metadatos.length,
+      data: metadatos,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [METADATOS] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al obtener metadatos'
+    });
+  }
+});
+
+
 module.exports = router;
