@@ -110,6 +110,7 @@ router.get('/ping', async (req, res) => {
   }
 });
 
+
 router.get('/metadatos', async (req, res) => {
   try {
     console.log('📋 [METADATOS] Iniciando carga de metadatos...');
@@ -118,7 +119,7 @@ router.get('/metadatos', async (req, res) => {
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
-    // ✅ PROYECCIÓN: Campos necesarios INCLUYENDO PRECIOS
+    // ✅ PROYECCIÓN CORREGIDA: Incluir TODOS los campos de precio
     const metadatos = await collection.find({}, {
       projection: {
         codigo: 1,
@@ -126,39 +127,51 @@ router.get('/metadatos', async (req, res) => {
         marca: 1,
         nombre: 1,
         aplicaciones: 1,
-        "detalles_tecnicos.Posición de la pieza": 1,
-        // 🆕 AGREGAR CAMPOS DE PRECIO
+        "detalles_tecnicos": 1, // Cambio: incluir TODO detalles_tecnicos
+        // 🆕 TODOS LOS CAMPOS DE PRECIO POSIBLES
         precio_lista_con_iva: 1,
         precio_numerico: 1,
         tiene_precio_valido: 1,
         precio: 1,
         price: 1,
         precio_base: 1,
+        precio_lista: 1,
+        valor: 1,
         imagen: 1,
         url: 1,
         equivalencias: 1,
-        detalles_tecnicos: 1,
         _id: 0 // Excluir _id para reducir tamaño
       }
     }).toArray();
 
     console.log(`✅ [METADATOS] ${metadatos.length} metadatos cargados`);
 
-    // 🔍 DEBUG: Verificar que los primeros productos tengan precios
+    // 🔍 DEBUG MEJORADO: Verificar que los primeros productos tengan precios
     if (metadatos.length > 0) {
       console.log('🔍 [METADATOS] Verificando precios en primeros 3 productos:');
       metadatos.slice(0, 3).forEach((producto, index) => {
         console.log(`  Producto ${index + 1}:`, {
           codigo: producto.codigo,
+          nombre: producto.nombre,
           precio_lista_con_iva: producto.precio_lista_con_iva,
           precio_numerico: producto.precio_numerico,
-          tiene_precio_valido: producto.tiene_precio_valido
+          tiene_precio_valido: producto.tiene_precio_valido,
+          todosLosCampos: Object.keys(producto) // Ver qué campos están llegando
         });
       });
 
       // Contar productos con precio válido
       const conPrecio = metadatos.filter(p => p.tiene_precio_valido === true).length;
-      console.log(`📊 [METADATOS] ${conPrecio} de ${metadatos.length} productos tienen precio válido`);
+      const conPrecioNumerico = metadatos.filter(p => p.precio_numerico && p.precio_numerico > 0).length;
+      console.log(`📊 [METADATOS] ${conPrecio} de ${metadatos.length} productos tienen tiene_precio_valido=true`);
+      console.log(`📊 [METADATOS] ${conPrecioNumerico} de ${metadatos.length} productos tienen precio_numerico > 0`);
+      
+      if (conPrecio === 0 && conPrecioNumerico === 0) {
+        console.warn('⚠️ NINGÚN producto tiene precio válido. Verificar estructura de datos en MongoDB.');
+        
+        // DEBUG adicional: Ver un producto completo
+        console.log('🔬 [DEBUG] Producto completo de ejemplo:', JSON.stringify(metadatos[0], null, 2));
+      }
     }
 
     res.json({
@@ -290,7 +303,6 @@ router.get('/productos-validos', async (req, res) => {
   }
 });
 
-// 🔍 ENDPOINT DE DEBUG: Analizar estructura de precios
 router.get('/debug/precios', async (req, res) => {
   try {
     console.log('🔍 [DEBUG PRECIOS] Analizando estructura...');
@@ -307,6 +319,7 @@ router.get('/debug/precios', async (req, res) => {
       totalProductos: await collection.countDocuments(),
       conPrecioValido: await collection.countDocuments({ tiene_precio_valido: true }),
       sinPrecioValido: await collection.countDocuments({ tiene_precio_valido: false }),
+      conPrecioNumerico: await collection.countDocuments({ precio_numerico: { $gt: 0 } }),
       muestraProductos: muestra.map(p => ({
         codigo: p.codigo,
         nombre: p.nombre,
@@ -320,7 +333,8 @@ router.get('/debug/precios', async (req, res) => {
     console.log('📊 [DEBUG PRECIOS] Análisis completado:', {
       total: analisis.totalProductos,
       conPrecio: analisis.conPrecioValido,
-      sinPrecio: analisis.sinPrecioValido
+      sinPrecio: analisis.sinPrecioValido,
+      conNumerico: analisis.conPrecioNumerico
     });
 
     res.json({
@@ -337,6 +351,7 @@ router.get('/debug/precios', async (req, res) => {
     });
   }
 });
+
 // 📦 PRODUCTOS - Con filtros y paginación
 router.get('/productos', async (req, res) => {
   try {
