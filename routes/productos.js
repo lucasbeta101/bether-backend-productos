@@ -118,9 +118,9 @@ function parseNaturalQuery(query) {
     const normalized = normalizeText(query);
     const words = normalized.split(' ').filter(word => !STOP_WORDS.includes(word) && word.length > 1);
     
-    const result = { product: null, position: null, year: null, vehicleTerms: [], isStructured: false };
-    const remainingWords = [];
+    const result = { product: null, position: null, year: null, vehicleTerms: [], isStructured: false, freeText: query };
 
+    const remainingWords = [];
     for (const word of words) {
         if (!result.product && productKeywords.includes(word.replace(/s$/, ''))) {
             result.product = word.replace(/s$/, '');
@@ -182,6 +182,7 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
         if (keywords.length > 0) {
             matchConditions.$and = keywords.map(word => ({
                 $or: [
+                    { codigo: { $regex: word, $options: 'i' } },
                     { nombre: { $regex: word, $options: 'i' } },
                     { "aplicaciones.marca": { $regex: word, $options: 'i' } },
                     { "aplicaciones.modelo": { $regex: word, $options: 'i' } }
@@ -218,15 +219,11 @@ router.get('/busqueda', async (req, res) => {
         if (!q || q.trim().length < 2) {
             return res.status(400).json({ success: false, error: 'La consulta de búsqueda es requerida (mínimo 2 caracteres).' });
         }
-
         const client = await connectToMongoDB();
         const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
-        
         const parsedQuery = parseNaturalQuery(q.trim());
         const pipeline = buildSearchPipeline(parsedQuery, parseInt(limit), parseInt(offset));
-
         const results = await collection.aggregate(pipeline).toArray();
-        
         console.log(`📊 [BÚSQUEDA BACKEND] Encontrados: ${results.length} resultados para la consulta "${q}".`);
         res.json({
             success: true,
@@ -235,7 +232,6 @@ router.get('/busqueda', async (req, res) => {
             results: results,
             totalResults: results.length,
         });
-
     } catch (error) {
         console.error('❌ [BÚSQUEDA BACKEND] Error fatal en la ruta /busqueda:', error);
         res.status(500).json({ success: false, error: 'Ocurrió un error en el servidor al realizar la búsqueda.', details: error.message });
@@ -246,16 +242,12 @@ router.get('/busqueda', async (req, res) => {
 router.get('/productos', async (req, res) => {
     try {
         const { categoria, marca, modelo, version, posicion, pagina = 1, limite = 15, ordenar = 'codigo' } = req.query;
-        console.log('📦 [PRODUCTOS] Parámetros:', { categoria, marca, modelo, version, posicion, pagina, limite });
-
         const client = await connectToMongoDB();
         const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
-
         const filtros = { tiene_precio_valido: true };
         if (categoria && categoria !== 'todos') {
             filtros.categoria = CATEGORIAS[categoria] ? { $in: CATEGORIAS[categoria] } : categoria;
         }
-
         const aplicacionesFiltro = {};
         if (marca) aplicacionesFiltro["aplicaciones.marca"] = marca;
         if (modelo) aplicacionesFiltro["aplicaciones.modelo"] = modelo;
@@ -263,17 +255,12 @@ router.get('/productos', async (req, res) => {
         if (marca || modelo || version) {
             Object.assign(filtros, aplicacionesFiltro);
         }
-
         if (posicion) {
             filtros["detalles_tecnicos.Posición de la pieza"] = posicion;
         }
-
-        console.log('🔍 [PRODUCTOS] Filtros construidos:', JSON.stringify(filtros, null, 2));
-
         const skip = (parseInt(pagina) - 1) * parseInt(limite);
         const limiteInt = parseInt(limite);
         const sort = { [ordenar]: 1 };
-
         const pipeline = [
             { $match: filtros },
             { $sort: sort },
@@ -282,13 +269,10 @@ router.get('/productos', async (req, res) => {
                 totalCount: [{ $count: "count" }]
             }}
         ];
-
         const result = await collection.aggregate(pipeline).toArray();
         const productos = result[0].data;
         const totalProductos = result[0].totalCount[0]?.count || 0;
         const totalPaginas = Math.ceil(totalProductos / limiteInt);
-
-        console.log(`✅ [PRODUCTOS] ${productos.length} productos encontrados (${totalProductos} total)`);
         res.json({
             success: true,
             data: productos,
@@ -308,12 +292,9 @@ router.get('/producto/:codigo', async (req, res) => {
         if (!codigo) {
             return res.status(400).json({ success: false, error: 'Código de producto requerido' });
         }
-
-        console.log('🔍 [PRODUCTO] Buscando producto:', codigo);
         const client = await connectToMongoDB();
         const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
         const producto = await collection.findOne({ codigo: codigo }, { projection: { _id: 0 } });
-
         if (!producto) {
             return res.status(404).json({ success: false, error: 'Producto no encontrado' });
         }
@@ -329,17 +310,12 @@ router.get('/filtros/:tipo', async (req, res) => {
     try {
         const { tipo } = req.params;
         const { categoria, marca, modelo } = req.query;
-
-        console.log('🚗 [FILTROS] Obteniendo:', tipo, 'para:', { categoria, marca, modelo });
-
         const client = await connectToMongoDB();
         const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
-        
         const filtrosBase = {};
         if (categoria && categoria !== 'todos') {
             filtrosBase.categoria = CATEGORIAS[categoria] ? { $in: CATEGORIAS[categoria] } : categoria;
         }
-
         let pipeline;
         switch (tipo) {
             case 'marcas':
@@ -361,7 +337,6 @@ router.get('/filtros/:tipo', async (req, res) => {
             default:
                 return res.status(400).json({ success: false, error: 'Tipo de filtro inválido' });
         }
-
         const resultado = await collection.aggregate(pipeline).toArray();
         res.json({ success: true, tipo: tipo, data: resultado, count: resultado.length });
     } catch (error) {
@@ -369,7 +344,6 @@ router.get('/filtros/:tipo', async (req, res) => {
         res.status(500).json({ success: false, error: 'Error al obtener filtros', details: error.message });
     }
 });
-
 
 // 5. RUTA DE PING
 router.get('/ping', async (req, res) => {
@@ -382,26 +356,97 @@ router.get('/ping', async (req, res) => {
     }
 });
 
-// 6. RUTA DE METADATOS (para inicialización del frontend)
-router.get('/metadatos', async (req, res) => {
+// 6. RUTA DE METADATOS PARA BÚSQUEDA (LA QUE FALTABA)
+router.get('/metadatos-busqueda', async (req, res) => {
     try {
-        console.log('📋 [METADATOS] Iniciando carga de metadatos...');
-        
+        console.log('🧠 [METADATOS-BÚSQUEDA] Cargando datos livianos...');
         const client = await connectToMongoDB();
         const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
-
         const metadatos = await collection.find({}, {
             projection: {
-                codigo: 1, categoria: 1, marca: 1, nombre: 1, aplicaciones: 1, 
-                "detalles_tecnicos.Posición de la pieza": 1, _id: 0
+                codigo: 1, nombre: 1, categoria: 1, marca: 1,
+                "aplicaciones.marca": 1, "aplicaciones.modelo": 1, "aplicaciones.version": 1,
+                _id: 0
             }
         }).toArray();
-
-        console.log(`✅ [METADATOS] ${metadatos.length} metadatos cargados`);
-        res.json({ success: true, count: metadatos.length, data: metadatos });
+        const searchIndex = {
+            codes: [], brands: new Set(), models: new Set(), categories: new Set(), vehicles: new Set()
+        };
+        metadatos.forEach(product => {
+            searchIndex.codes.push(product.codigo);
+            searchIndex.categories.add(product.categoria);
+            if (product.marca) searchIndex.brands.add(product.marca);
+            if (product.aplicaciones) {
+                product.aplicaciones.forEach(app => {
+                    if (app.marca) searchIndex.brands.add(app.marca);
+                    if (app.modelo) searchIndex.models.add(app.modelo);
+                    if (app.marca && app.modelo) {
+                        searchIndex.vehicles.add(`${app.marca} ${app.modelo}`);
+                    }
+                });
+            }
+        });
+        const finalIndex = {
+            codes: searchIndex.codes,
+            brands: Array.from(searchIndex.brands),
+            models: Array.from(searchIndex.models), 
+            categories: Array.from(searchIndex.categories),
+            vehicles: Array.from(searchIndex.vehicles)
+        };
+        console.log(`🧠 [METADATOS-BÚSQUEDA] Índice generado: ${metadatos.length} productos`);
+        res.json({
+            success: true,
+            count: metadatos.length,
+            searchIndex: finalIndex,
+            timestamp: new Date().toISOString()
+        });
     } catch (error) {
-        console.error('❌ [METADATOS] Error:', error);
-        res.status(500).json({ success: false, error: 'Error al obtener metadatos', details: error.message });
+        console.error('❌ [METADATOS-BÚSQUEDA] Error:', error);
+        res.status(500).json({ success: false, error: 'Error al obtener metadatos de búsqueda', details: error.message });
+    }
+});
+
+// 7. RUTA DE SUGERENCIAS PARA AUTOCOMPLETADO
+router.get('/sugerencias', async (req, res) => {
+    try {
+        const { q, limit = 8 } = req.query;
+        if (!q || q.trim().length < 2) {
+            return res.json({ success: true, suggestions: [] });
+        }
+        const client = await connectToMongoDB();
+        const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
+        const suggestions = new Set();
+        const normalizedQuery = normalizeText(q);
+
+        const codigoMatches = await collection.find(
+            { codigo: { $regex: `^${normalizedQuery}`, $options: 'i' } },
+            { projection: { codigo: 1, _id: 0 }, limit: 3 }
+        ).toArray();
+        codigoMatches.forEach(p => suggestions.add(p.codigo));
+
+        const vehicleMatches = await collection.aggregate([
+            { $unwind: "$aplicaciones" },
+            { $match: { 
+                $or: [
+                    { "aplicaciones.marca": { $regex: `^${normalizedQuery}`, $options: 'i' } },
+                    { "aplicaciones.modelo": { $regex: `^${normalizedQuery}`, $options: 'i' } }
+                ]
+            }},
+            { $group: { _id: null, marcas: { $addToSet: "$aplicaciones.marca" }, modelos: { $addToSet: "$aplicaciones.modelo" }}},
+            { $limit: 1 }
+        ]).toArray();
+
+        if (vehicleMatches.length > 0) {
+            const { marcas, modelos } = vehicleMatches[0];
+            marcas.slice(0, 2).forEach(marca => suggestions.add(marca));
+            modelos.slice(0, 2).forEach(modelo => suggestions.add(modelo));
+        }
+
+        const finalSuggestions = Array.from(suggestions).slice(0, parseInt(limit));
+        res.json({ success: true, query: q, suggestions: finalSuggestions, count: finalSuggestions.length });
+    } catch (error) {
+        console.error('❌ [SUGERENCIAS] Error:', error);
+        res.status(500).json({ success: false, error: 'Error al obtener sugerencias' });
     }
 });
 
