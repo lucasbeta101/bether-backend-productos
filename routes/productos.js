@@ -114,21 +114,22 @@ function checkYearInRange(versionString, targetYear) {
   const version = String(versionString);
   const year = parseInt(targetYear);
 
-  // Caso 1: Rango abierto hacia atrás, ej: (../81)
+  // Caso 1: Rango abierto hacia atrás, ej: (../81) o ../81
   let match = version.match(/\.\.\/(\d{2,4})/);
   if (match) {
+      // Si el año es de 2 dígitos (ej. 81), lo convierte a 1981.
       const endYear = parseInt(match[1].length === 2 ? '19' + match[1] : match[1]);
       return year <= endYear;
   }
 
-  // Caso 2: Rango abierto hacia adelante, ej: (81/..)
+  // Caso 2: Rango abierto hacia adelante, ej: (81/..) o 81/..
   match = version.match(/(\d{2,4})\/\.\./);
   if (match) {
       const startYear = parseInt(match[1].length === 2 ? '19' + match[1] : match[1]);
       return year >= startYear;
   }
 
-  // Caso 3: Rango cerrado, ej: (79/85)
+  // Caso 3: Rango cerrado, ej: (79/85) o 79/85
   match = version.match(/(\d{2,4})\/(\d{2,4})/);
   if (match) {
       const startYear = parseInt(match[1].length === 2 ? '19' + match[1] : match[1]);
@@ -136,7 +137,7 @@ function checkYearInRange(versionString, targetYear) {
       return year >= startYear && year <= endYear;
   }
   
-  // Caso 4: Año único, ej: (1980) o (80)
+  // Caso 4: Año único, ej: (1980) o (80) o 80
   match = version.match(/\(?(\d{2,4})\)?/);
   if (match) {
       const versionYear = parseInt(match[1].length === 2 ? '19' + match[1] : match[1]);
@@ -177,9 +178,11 @@ function parseNaturalQuery(query) {
 
 function buildSearchPipeline(parsedQuery, limit, offset) {
   let matchConditions = { tiene_precio_valido: true };
-  const andConditions = [];
+  console.log('🛠️ [Pipeline sin Año] Query Recibida:', JSON.stringify(parsedQuery, null, 2));
 
   if (parsedQuery.isStructured) {
+      const andConditions = [];
+
       if (parsedQuery.product) {
           const validCategories = getValidCategoriesForProduct(parsedQuery.product);
           if (validCategories.length > 0) {
@@ -187,81 +190,49 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
           }
       }
       if (parsedQuery.position) {
-          andConditions.push({ "detalles_tecnicos.Posición de la pieza": { $regex: mapPositionForSearch(parsedQuery.position), $options: 'i' } });
+          const mappedPosition = mapPositionForSearch(parsedQuery.position);
+          andConditions.push({ "detalles_tecnicos.Posición de la pieza": { $regex: mappedPosition, $options: 'i' } });
       }
       
-      const vehicleTermsConditions = parsedQuery.vehicleTerms.map(term => ({ 
-          "aplicaciones": { 
-              $elemMatch: { 
-                  $or: [
-                      { "marca": { $regex: term, $options: 'i' } }, 
-                      { "modelo": { $regex: term, $options: 'i' } }
-                  ]
-              }
-          }
-      }));
-      if(vehicleTermsConditions.length > 0) {
-          andConditions.push(...vehicleTermsConditions);
+      const elemMatchConditions = { $and: [] };
+
+      if (parsedQuery.vehicleTerms && parsedQuery.vehicleTerms.length > 0) {
+          const vehicleConditions = parsedQuery.vehicleTerms.map(term => ({
+              $or: [{ "marca": { $regex: term, $options: 'i' } }, { "modelo": { $regex: term, $options: 'i' } }]
+          }));
+          elemMatchConditions.$and.push(...vehicleConditions);
       }
 
-      // --- LÓGICA DE RANGOS DE AÑO ---
-      if (parsedQuery.year) {
-          const targetYear = parseInt(parsedQuery.year);
-          andConditions.push({
-              "aplicaciones": {
-                  $elemMatch: {
-                      $expr: {
-                          $function: {
-                              body: `function(versionString, targetYear) {
-                                  if (!versionString || !targetYear) return false;
-                                  const version = String(versionString);
-                                  const year = parseInt(targetYear);
-
-                                  let match = version.match(/\\.\\.\\/(\\d{2,4})/);
-                                  if (match) {
-                                      const endYear = parseInt(match[1].length === 2 ? '19' + match[1] : match[1]);
-                                      return year <= endYear;
-                                  }
-                                  match = version.match(/(\\d{2,4})\\/\\.\\./);
-                                  if (match) {
-                                      const startYear = parseInt(match[1].length === 2 ? '19' + match[1] : match[1]);
-                                      return year >= startYear;
-                                  }
-                                  match = version.match(/(\\d{2,4})\\/(\\d{2,4})/);
-                                  if (match) {
-                                      const startYear = parseInt(match[1].length === 2 ? '19' + match[1] : match[1]);
-                                      const endYear = parseInt(match[2].length === 2 ? '19' + match[2] : match[2]);
-                                      return year >= startYear && year <= endYear;
-                                  }
-                                  match = version.match(/\\(?(\\d{2,4})\\)?/);
-                                  if (match) {
-                                      const versionYear = parseInt(match[1].length === 2 ? '19' + match[1] : match[1]);
-                                      return year === versionYear;
-                                  }
-                                  return false;
-                              }`,
-                              args: ["$version", targetYear],
-                              lang: "js"
-                          }
-                      }
-                  }
-              }
-          });
+      if (elemMatchConditions.$and.length > 0) {
+          andConditions.push({ aplicaciones: { $elemMatch: elemMatchConditions } });
       }
       
       if(andConditions.length > 0) {
-          matchConditions.$and = andConditions;
+          matchConditions = { ...matchConditions, $and: andConditions };
       }
 
   } else {
-      const keywords = normalizeText(parsedQuery.freeText).split(' ').filter(k => k.length > 0);
+      const freeText = parsedQuery.freeText || "";
+      const keywords = normalizeText(freeText).split(' ').filter(k => k.length > 0);
       if (keywords.length > 0) {
-          matchConditions.$and = keywords.map(word => ({ $or: [{ codigo: { $regex: word, $options: 'i' } }, { nombre: { $regex: word, $options: 'i' } }] }));
+          matchConditions.$and = keywords.map(word => ({
+              $or: [ { codigo: { $regex: word, $options: 'i' } }, { nombre: { $regex: word, $options: 'i' } } ]
+          }));
       }
   }
 
-  console.log('🚨 [Pipeline con Rangos] $match final:', JSON.stringify(matchConditions));
-  return [{ $match: matchConditions }, { $sort: { codigo: 1 } }, { $skip: offset }, { $limit: limit }, { $project: { _id: 0 } }];
+  console.log('🚨 [Pipeline sin Año] CONSULTA FINAL $match:', JSON.stringify(matchConditions, null, 2));
+  
+  const pipeline = [ { $match: matchConditions }, { $sort: { codigo: 1 } } ];
+
+  if(offset > 0) {
+      pipeline.push({ $skip: offset });
+  }
+
+  pipeline.push({ $limit: limit });
+  pipeline.push({ $project: { _id: 0 } });
+
+  return pipeline;
 }
 
 // =================================================================
@@ -285,28 +256,53 @@ router.get('/metadatos', async (req, res) => {
   }
 });
 router.get('/busqueda', async (req, res) => {
-    try {
-        const { q, limit = 20, offset = 0 } = req.query;
-        if (!q || q.trim().length < 2) {
-            return res.status(400).json({ success: false, error: 'La consulta de búsqueda es requerida (mínimo 2 caracteres).' });
-        }
-        const client = await connectToMongoDB();
-        const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
-        const parsedQuery = parseNaturalQuery(q.trim());
-        const pipeline = buildSearchPipeline(parsedQuery, parseInt(limit), parseInt(offset));
-        const results = await collection.aggregate(pipeline).toArray();
-        console.log(`📊 [BÚSQUEDA BACKEND] Encontrados: ${results.length} resultados para la consulta "${q}".`);
-        res.json({
-            success: true,
-            query: q,
-            parsedQuery: parsedQuery,
-            results: results,
-            totalResults: results.length,
-        });
-    } catch (error) {
-        console.error('❌ [BÚSQUEDA BACKEND] Error fatal en la ruta /busqueda:', error);
-        res.status(500).json({ success: false, error: 'Ocurrió un error en el servidor al realizar la búsqueda.', details: error.message });
-    }
+  try {
+      const { q, limit = 20, offset = 0 } = req.query;
+      if (!q || q.trim().length < 2) {
+          return res.status(400).json({ success: false, error: 'Consulta requerida' });
+      }
+
+      const client = await connectToMongoDB();
+      const collection = client.db(DB_NAME).collection(COLLECTION_NAME);
+      
+      const parsedQuery = parseNaturalQuery(q.trim());
+      
+      // Pedimos más resultados a la BD para tener margen para filtrar por año
+      const pipeline = buildSearchPipeline(parsedQuery, parseInt(limit) * 5, parseInt(offset));
+
+      let results = await collection.aggregate(pipeline).toArray();
+      
+      // ✅ FILTRADO POR RANGO DE AÑO EN JAVASCRIPT
+      if (parsedQuery.year && results.length > 0) {
+          console.log(`[FILTRO JS] Filtrando ${results.length} resultados para el año ${parsedQuery.year}...`);
+          const targetYear = parseInt(parsedQuery.year);
+          
+          results = results.filter(product => {
+              if (!product.aplicaciones || product.aplicaciones.length === 0) {
+                  return false;
+              }
+              // Mantenemos el producto si CUALQUIERA de sus aplicaciones coincide con el rango de año
+              return product.aplicaciones.some(app => checkYearInRange(app.version, targetYear));
+          });
+
+          console.log(`[FILTRO JS] ${results.length} resultados restantes después del filtro de año.`);
+      }
+
+      // Aplicamos el límite final después de todo el filtrado
+      const finalResults = results.slice(0, parseInt(limit));
+
+      res.json({
+          success: true,
+          query: q,
+          parsedQuery: parsedQuery,
+          results: finalResults,
+          totalResults: finalResults.length,
+      });
+
+  } catch (error) {
+      console.error('❌ [BÚSQUEDA] Error en la ruta /busqueda:', error);
+      res.status(500).json({ success: false, error: 'Error en búsqueda', details: error.message });
+  }
 });
 
 // 2. RUTA DE PRODUCTOS (con filtros)
