@@ -596,7 +596,7 @@ router.get('/sugerencias', async (req, res) => {
     });
 
   } catch (error) {
-    res.status(500).json({
+    res.status(501).json({
       success: false,
       error: error.message
     });
