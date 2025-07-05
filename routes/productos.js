@@ -703,7 +703,534 @@ router.get('/sugerencias', async (req, res) => {
     });
   }
 });
+// ===== ENDPOINTS PARA FILTROS DE BÚSQUEDA =====
+// Agregar estos endpoints a tu productos.js
 
+// 📂 CATEGORÍAS
+router.get('/categorias', async (req, res) => {
+  try {
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Obtener todas las categorías únicas con productos válidos
+    const categorias = await collection.distinct('categoria', { 
+      tiene_precio_valido: true 
+    });
+
+    // Ordenar alfabéticamente
+    categorias.sort();
+
+    console.log(`📂 [CATEGORIAS] ${categorias.length} categorías encontradas`);
+
+    res.json({
+      success: true,
+      data: categorias,
+      count: categorias.length,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [CATEGORIAS] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 🚗 MARCAS (filtradas por categoría)
+router.get('/marcas', async (req, res) => {
+  try {
+    const { categoria } = req.query;
+    
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Construir filtro base
+    let matchConditions = { tiene_precio_valido: true };
+    
+    // Filtrar por categoría si se especifica
+    if (categoria && categoria !== 'todos') {
+      if (CATEGORIAS[categoria]) {
+        matchConditions.categoria = { $in: CATEGORIAS[categoria] };
+      } else {
+        matchConditions.categoria = categoria;
+      }
+    }
+
+    // Pipeline para obtener marcas únicas
+    const pipeline = [
+      { $match: matchConditions },
+      { $unwind: "$aplicaciones" },
+      { 
+        $group: { 
+          _id: null, 
+          marcas: { $addToSet: "$aplicaciones.marca" } 
+        } 
+      },
+      {
+        $project: {
+          _id: 0,
+          marcas: { 
+            $sortArray: { 
+              input: { $filter: { input: "$marcas", cond: { $ne: ["$$this", null] } } }, 
+              sortBy: 1 
+            } 
+          }
+        }
+      }
+    ];
+
+    const resultado = await collection.aggregate(pipeline).toArray();
+    const marcas = resultado[0]?.marcas || [];
+
+    console.log(`🚗 [MARCAS] ${marcas.length} marcas encontradas para categoría: ${categoria || 'todas'}`);
+
+    res.json({
+      success: true,
+      data: marcas,
+      count: marcas.length,
+      filtros: { categoria },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [MARCAS] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 🚙 MODELOS (filtrados por categoría y marca)
+router.get('/modelos', async (req, res) => {
+  try {
+    const { categoria, marca } = req.query;
+    
+    if (!marca) {
+      return res.status(400).json({
+        success: false,
+        error: 'Parámetro "marca" requerido'
+      });
+    }
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Construir filtro base
+    let matchConditions = { tiene_precio_valido: true };
+    
+    // Filtrar por categoría si se especifica
+    if (categoria && categoria !== 'todos') {
+      if (CATEGORIAS[categoria]) {
+        matchConditions.categoria = { $in: CATEGORIAS[categoria] };
+      } else {
+        matchConditions.categoria = categoria;
+      }
+    }
+
+    // Pipeline para obtener modelos únicos de una marca específica
+    const pipeline = [
+      { $match: matchConditions },
+      { $unwind: "$aplicaciones" },
+      { 
+        $match: { 
+          "aplicaciones.marca": marca 
+        } 
+      },
+      { 
+        $group: { 
+          _id: null, 
+          modelos: { $addToSet: "$aplicaciones.modelo" } 
+        } 
+      },
+      {
+        $project: {
+          _id: 0,
+          modelos: { 
+            $sortArray: { 
+              input: { $filter: { input: "$modelos", cond: { $ne: ["$$this", null] } } }, 
+              sortBy: 1 
+            } 
+          }
+        }
+      }
+    ];
+
+    const resultado = await collection.aggregate(pipeline).toArray();
+    const modelos = resultado[0]?.modelos || [];
+
+    console.log(`🚙 [MODELOS] ${modelos.length} modelos encontrados para marca: ${marca}`);
+
+    res.json({
+      success: true,
+      data: modelos,
+      count: modelos.length,
+      filtros: { categoria, marca },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [MODELOS] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ⚙️ VERSIONES (filtradas por categoría, marca y modelo)
+router.get('/versiones', async (req, res) => {
+  try {
+    const { categoria, marca, modelo } = req.query;
+    
+    if (!marca || !modelo) {
+      return res.status(400).json({
+        success: false,
+        error: 'Parámetros "marca" y "modelo" requeridos'
+      });
+    }
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Construir filtro base
+    let matchConditions = { tiene_precio_valido: true };
+    
+    // Filtrar por categoría si se especifica
+    if (categoria && categoria !== 'todos') {
+      if (CATEGORIAS[categoria]) {
+        matchConditions.categoria = { $in: CATEGORIAS[categoria] };
+      } else {
+        matchConditions.categoria = categoria;
+      }
+    }
+
+    // Pipeline para obtener versiones únicas de una marca y modelo específicos
+    const pipeline = [
+      { $match: matchConditions },
+      { $unwind: "$aplicaciones" },
+      { 
+        $match: { 
+          "aplicaciones.marca": marca,
+          "aplicaciones.modelo": modelo
+        } 
+      },
+      { 
+        $group: { 
+          _id: null, 
+          versiones: { $addToSet: "$aplicaciones.version" } 
+        } 
+      },
+      {
+        $project: {
+          _id: 0,
+          versiones: { 
+            $sortArray: { 
+              input: { $filter: { input: "$versiones", cond: { $ne: ["$this", null] } } }, 
+              sortBy: 1 
+            } 
+          }
+        }
+      }
+    ];
+
+    const resultado = await collection.aggregate(pipeline).toArray();
+    const versiones = resultado[0]?.versiones || [];
+
+    console.log(`⚙️ [VERSIONES] ${versiones.length} versiones encontradas para ${marca} ${modelo}`);
+
+    res.json({
+      success: true,
+      data: versiones,
+      count: versiones.length,
+      filtros: { categoria, marca, modelo },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [VERSIONES] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 🔍 BÚSQUEDA CON FILTROS COMBINADOS
+router.get('/busqueda-filtrada', async (req, res) => {
+  try {
+    const { 
+      categoria, 
+      marca, 
+      modelo, 
+      version, 
+      limit = 20, 
+      offset = 0 
+    } = req.query;
+
+    // Validar que al menos un filtro esté presente
+    if (!categoria && !marca && !modelo && !version) {
+      return res.status(400).json({
+        success: false,
+        error: 'Al menos un filtro debe estar especificado'
+      });
+    }
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    console.log('🔍 [BÚSQUEDA-FILTRADA] Filtros recibidos:', { categoria, marca, modelo, version });
+
+    // Construir condiciones de filtrado
+    let matchConditions = { tiene_precio_valido: true };
+
+    // Filtro por categoría
+    if (categoria && categoria !== 'todos') {
+      if (CATEGORIAS[categoria]) {
+        matchConditions.categoria = { $in: CATEGORIAS[categoria] };
+      } else {
+        matchConditions.categoria = categoria;
+      }
+    }
+
+    // Filtros de aplicaciones (marca, modelo, versión)
+    const aplicacionFilters = [];
+    
+    if (marca) {
+      aplicacionFilters.push({ "aplicaciones.marca": marca });
+    }
+    
+    if (modelo) {
+      aplicacionFilters.push({ "aplicaciones.modelo": modelo });
+    }
+    
+    if (version) {
+      aplicacionFilters.push({ "aplicaciones.version": version });
+    }
+
+    // Si hay filtros de aplicación, usar $elemMatch
+    if (aplicacionFilters.length > 0) {
+      matchConditions.aplicaciones = {
+        $elemMatch: {
+          $and: aplicacionFilters.map(filter => {
+            const key = Object.keys(filter)[0].replace('aplicaciones.', '');
+            return { [key]: filter[Object.keys(filter)[0]] };
+          })
+        }
+      };
+    }
+
+    console.log('🔧 [BÚSQUEDA-FILTRADA] Condiciones MongoDB:', JSON.stringify(matchConditions, null, 2));
+
+    // Pipeline de búsqueda
+    const pipeline = [
+      { $match: matchConditions },
+      { $sort: { codigo: 1 } }
+    ];
+
+    // Paginación
+    if (parseInt(offset) > 0) {
+      pipeline.push({ $skip: parseInt(offset) });
+    }
+    
+    pipeline.push({ $limit: parseInt(limit) });
+    pipeline.push({ $project: { _id: 0 } });
+
+    // Ejecutar búsqueda
+    const startTime = Date.now();
+    const productos = await collection.aggregate(pipeline).toArray();
+    const processingTime = Date.now() - startTime;
+
+    // Contar total de resultados (sin paginación)
+    const countPipeline = [
+      { $match: matchConditions },
+      { $count: "total" }
+    ];
+    
+    const countResult = await collection.aggregate(countPipeline).toArray();
+    const totalResultados = countResult[0]?.total || 0;
+
+    console.log(`✅ [BÚSQUEDA-FILTRADA] ${productos.length}/${totalResultados} productos encontrados en ${processingTime}ms`);
+
+    res.json({
+      success: true,
+      results: productos,
+      count: productos.length,
+      totalResults: totalResultados,
+      filtros: { categoria, marca, modelo, version },
+      pagination: {
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        hasMore: (parseInt(offset) + productos.length) < totalResultados
+      },
+      processingTime: processingTime,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [BÚSQUEDA-FILTRADA] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 📊 ESTADÍSTICAS DE FILTROS (opcional - para mostrar contadores)
+router.get('/filtros-stats', async (req, res) => {
+  try {
+    const { categoria } = req.query;
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Construir filtro base
+    let matchConditions = { tiene_precio_valido: true };
+    
+    if (categoria && categoria !== 'todos') {
+      if (CATEGORIAS[categoria]) {
+        matchConditions.categoria = { $in: CATEGORIAS[categoria] };
+      } else {
+        matchConditions.categoria = categoria;
+      }
+    }
+
+    // Pipeline para estadísticas completas
+    const pipeline = [
+      { $match: matchConditions },
+      { $unwind: "$aplicaciones" },
+      {
+        $group: {
+          _id: null,
+          totalProductos: { $sum: 1 },
+          marcas: { $addToSet: "$aplicaciones.marca" },
+          modelos: { $addToSet: "$aplicaciones.modelo" },
+          versiones: { $addToSet: "$aplicaciones.version" },
+          categorias: { $addToSet: "$categoria" }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          totalProductos: 1,
+          totalMarcas: { $size: "$marcas" },
+          totalModelos: { $size: "$modelos" },
+          totalVersiones: { $size: "$versiones" },
+          totalCategorias: { $size: "$categorias" }
+        }
+      }
+    ];
+
+    const stats = await collection.aggregate(pipeline).toArray();
+    const estadisticas = stats[0] || {
+      totalProductos: 0,
+      totalMarcas: 0,
+      totalModelos: 0,
+      totalVersiones: 0,
+      totalCategorias: 0
+    };
+
+    console.log('📊 [FILTROS-STATS] Estadísticas calculadas:', estadisticas);
+
+    res.json({
+      success: true,
+      data: estadisticas,
+      filtros: { categoria },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [FILTROS-STATS] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 🎯 ENDPOINT PARA AUTOCOMPLETAR FILTROS (búsqueda rápida)
+router.get('/filtros-autocomplete', async (req, res) => {
+  try {
+    const { q, tipo = 'all', limit = 10 } = req.query;
+
+    if (!q || q.trim().length < 2) {
+      return res.json({
+        success: true,
+        suggestions: [],
+        count: 0
+      });
+    }
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const query = q.trim();
+    const suggestions = new Set();
+
+    // Buscar en diferentes campos según el tipo
+    const searchFields = [];
+    
+    if (tipo === 'all' || tipo === 'marca') {
+      searchFields.push('aplicaciones.marca');
+    }
+    if (tipo === 'all' || tipo === 'modelo') {
+      searchFields.push('aplicaciones.modelo');
+    }
+    if (tipo === 'all' || tipo === 'categoria') {
+      searchFields.push('categoria');
+    }
+
+    // Pipeline para autocompletar
+    for (const field of searchFields) {
+      const pipeline = [
+        { $match: { tiene_precio_valido: true } },
+        { $unwind: field.includes('aplicaciones') ? "$aplicaciones" : "$categoria" },
+        { 
+          $match: { 
+            [field]: { $regex: query, $options: 'i' } 
+          } 
+        },
+        { $group: { _id: `${field}` } },
+        { $limit: parseInt(limit) }
+      ];
+
+      const results = await collection.aggregate(pipeline).toArray();
+      results.forEach(result => {
+        if (result._id && result._id.toLowerCase().includes(query.toLowerCase())) {
+          suggestions.add(result._id);
+        }
+      });
+    }
+
+    const finalSuggestions = Array.from(suggestions)
+      .slice(0, parseInt(limit))
+      .sort();
+
+    res.json({
+      success: true,
+      suggestions: finalSuggestions,
+      count: finalSuggestions.length,
+      query: query,
+      tipo: tipo
+    });
+
+  } catch (error) {
+    console.error('❌ [FILTROS-AUTOCOMPLETE] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
 // Al final de productos.js, reemplazar las líneas problemáticas por:
 
