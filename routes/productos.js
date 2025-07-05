@@ -244,14 +244,13 @@ router.get('/ping', async (req, res) => {
   }
 });
 
-// 📋 METADATOS - Para inicialización del frontend
 router.get('/metadatos', async (req, res) => {
   try {
     const { 
-      pagina = 1, 
-      limite = 50,  // Cargar de a 50 en lugar de 4000+
+      pagina = null,        // 🔄 CAMBIO: null por defecto
+      limite = null,        // 🔄 CAMBIO: null por defecto 
       categoria = null,
-      solo_conteo = false  // Para obtener solo el conteo total
+      solo_conteo = false
     } = req.query;
 
     const client = await connectToMongoDB();
@@ -283,77 +282,123 @@ router.get('/metadatos', async (req, res) => {
       }
     }
 
-    // Pipeline optimizado con proyección mínima
-    const pipeline = [
-      { $match: matchConditions },
-      { $sort: { codigo: 1 } },
-      {
-        $facet: {
-          productos: [
-            { $skip: (parseInt(pagina) - 1) * parseInt(limite) },
-            { $limit: parseInt(limite) },
-            { 
-              $project: { 
-                _id: 0,
-                codigo: 1,
-                nombre: 1,
-                categoria: 1,
-                marca: 1,
-                precio_lista_con_iva: 1,
-                precio_numerico: 1,
-                tiene_precio_valido: 1,
-                // 🎯 IMAGEN OPTIMIZADA - Solo cargar placeholder inicialmente
-                imagen: { $ifNull: ["$imagen", "/img/placeholder-producto.webp"] },
-                // 🎯 APLICACIONES LIMITADAS - Solo las primeras 2
-                aplicaciones: { $slice: ["$aplicaciones", 2] },
-                // 🎯 DETALLES BÁSICOS - Solo posición
-                "detalles_tecnicos.Posición de la pieza": "$detalles_tecnicos.Posición de la pieza"
-              } 
-            }
-          ],
-          totalCount: [
-            { $count: "count" }
-          ]
-        }
-      }
-    ];
-
-    console.log(`📦 [METADATOS-OPTIMIZADO] Cargando página ${pagina}, límite ${limite}`);
-    const startTime = Date.now();
+    // 🚀 DETERMINAR SI ES PAGINADO O COMPLETO
+    const esPaginado = pagina !== null && limite !== null;
     
-    const results = await collection.aggregate(pipeline).toArray();
-    const processingTime = Date.now() - startTime;
+    console.log(`📦 [METADATOS] Solicitud ${esPaginado ? 'PAGINADA' : 'COMPLETA'}`);
+    
+    if (esPaginado) {
+      // 📄 MODO PAGINADO - Para carga inicial de 9 productos
+      const pipeline = [
+        { $match: matchConditions },
+        { $sort: { codigo: 1 } },
+        {
+          $facet: {
+            productos: [
+              { $skip: (parseInt(pagina) - 1) * parseInt(limite) },
+              { $limit: parseInt(limite) },
+              { 
+                $project: { 
+                  _id: 0,
+                  codigo: 1,
+                  nombre: 1,
+                  categoria: 1,
+                  marca: 1,
+                  precio_lista_con_iva: 1,
+                  precio_numerico: 1,
+                  tiene_precio_valido: 1,
+                  imagen: { $ifNull: ["$imagen", "/img/placeholder-producto.webp"] },
+                  aplicaciones: { $slice: ["$aplicaciones", 2] },
+                  "detalles_tecnicos.Posición de la pieza": "$detalles_tecnicos.Posición de la pieza"
+                } 
+              }
+            ],
+            totalCount: [
+              { $count: "count" }
+            ]
+          }
+        }
+      ];
 
-    const productos = results[0].productos || [];
-    const totalProductos = results[0].totalCount[0]?.count || 0;
+      const startTime = Date.now();
+      const results = await collection.aggregate(pipeline).toArray();
+      const processingTime = Date.now() - startTime;
 
-    console.log(`✅ [METADATOS-OPTIMIZADO] ${productos.length} productos en ${processingTime}ms`);
+      const productos = results[0].productos || [];
+      const totalProductos = results[0].totalCount[0]?.count || 0;
 
-    // 🆕 RESPUESTA COMPATIBLE CON FRONTEND EXISTENTE
-    res.json({
-      success: true,
-      count: productos.length,
-      data: productos,
-      // 🎯 DATOS ADICIONALES PARA OPTIMIZACIÓN
-      pagination: {
-        paginaActual: parseInt(pagina),
-        limite: parseInt(limite),
-        totalProductos: totalProductos,
-        totalPaginas: Math.ceil(totalProductos / parseInt(limite)),
-        tieneMas: productos.length === parseInt(limite)
-      },
-      processingTime: processingTime,
-      timestamp: new Date().toISOString()
-    });
+      console.log(`✅ [METADATOS-PAGINADO] ${productos.length} productos en página ${pagina} (${processingTime}ms)`);
+
+      res.json({
+        success: true,
+        count: productos.length,
+        data: productos,
+        pagination: {
+          paginaActual: parseInt(pagina),
+          limite: parseInt(limite),
+          totalProductos: totalProductos,
+          totalPaginas: Math.ceil(totalProductos / parseInt(limite)),
+          tieneMas: productos.length === parseInt(limite)
+        },
+        processingTime: processingTime,
+        timestamp: new Date().toISOString()
+      });
+
+    } else {
+      // 🚀 MODO COMPLETO - Todos los productos de una vez
+      console.log(`🔥 [METADATOS-COMPLETO] Cargando TODOS los productos...`);
+      
+      const pipeline = [
+        { $match: matchConditions },
+        { $sort: { codigo: 1 } },
+        { 
+          $project: { 
+            _id: 0,
+            codigo: 1,
+            nombre: 1,
+            categoria: 1,
+            marca: 1,
+            precio_lista_con_iva: 1,
+            precio_numerico: 1,
+            tiene_precio_valido: 1,
+            imagen: 1,
+            aplicaciones: 1, // 🔄 TODOS los datos de aplicaciones
+            detalles_tecnicos: 1, // 🔄 TODOS los detalles técnicos
+            equivalencias: 1
+          } 
+        }
+      ];
+
+      const startTime = Date.now();
+      const productos = await collection.aggregate(pipeline).toArray();
+      const processingTime = Date.now() - startTime;
+
+      console.log(`🎉 [METADATOS-COMPLETO] ${productos.length} productos cargados en ${processingTime}ms`);
+
+      // 🎯 RESPUESTA COMPATIBLE PERO SIN PAGINACIÓN
+      res.json({
+        success: true,
+        count: productos.length,
+        data: productos,
+        // 📊 Info para compatibilidad
+        pagination: {
+          totalProductos: productos.length,
+          cargaCompleta: true
+        },
+        processingTime: processingTime,
+        timestamp: new Date().toISOString()
+      });
+    }
 
   } catch (error) {
-    console.error('❌ [METADATOS-OPTIMIZADO] Error:', error);
+    console.error('❌ [METADATOS] Error:', error);
     res.status(500).json({
       success: false,
       error: error.message
     });
   }
 });
+
 router.get('/filtros-rapidos', async (req, res) => {
   try {
     const { categoria = null } = req.query;
