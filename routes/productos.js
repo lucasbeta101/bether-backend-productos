@@ -110,13 +110,39 @@ function mapPositionForSearch(position) {
   return positionMap[normalizedPosition] || position;
 }
 
-// ===== PARSER SIMPLE (UNA SOLA FUNCIÓN) =====
 function parseNaturalQuery(query) {
   console.log('🧐 [PARSER] Analizando:', query);
   
   const STOP_WORDS = ['para', 'de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'con', 'mi', 'auto'];
   const productKeywords = ['amortiguador', 'pastilla', 'freno', 'disco', 'cazoleta', 'bieleta', 'rotula', 'embrague', 'brazo', 'extremo', 'axial', 'homocinetica'];
   const positionKeywords = ['delantero', 'trasero', 'izquierdo', 'derecho', 'del', 'pos', 'izq', 'der'];
+  
+  // 🆕 DETECCIÓN DE FILTROS FORMATEADOS
+  const filterPattern = /(categoria|marca|modelo|version):"([^"]+)"/g;
+  const filterMatches = [...query.matchAll(filterPattern)];
+  
+  if (filterMatches.length > 0) {
+    console.log('🎯 [PARSER] Filtros detectados en query:', filterMatches);
+    
+    const extractedFilters = {};
+    filterMatches.forEach(match => {
+      const [, filterType, filterValue] = match;
+      extractedFilters[filterType] = filterValue;
+    });
+    
+    return {
+      product: null,
+      position: null,
+      year: null,
+      vehicleTerms: [],
+      isStructured: true,
+      // 🆕 NUEVAS PROPIEDADES PARA FILTROS
+      isFilterQuery: true,
+      extractedFilters: extractedFilters,
+      originalQuery: query,
+      freeText: query.replace(filterPattern, '').trim()
+    };
+  }
   
   // 🆕 DETECCIÓN DE CÓDIGO EXACTO
   const trimmedQuery = query.trim();
@@ -134,6 +160,8 @@ function parseNaturalQuery(query) {
     // 🆕 NUEVAS PROPIEDADES PARA CÓDIGO
     isExactCode: isLikelyCode,
     exactCode: isLikelyCode ? trimmedQuery : null,
+    isFilterQuery: false,
+    extractedFilters: null,
     freeText: query 
   };
 
@@ -162,11 +190,64 @@ function parseNaturalQuery(query) {
   return result;
 }
 
-// ===== PIPELINE DE BÚSQUEDA PRINCIPAL =====
 function buildSearchPipeline(parsedQuery, limit, offset) {
   console.log('🔧 [PIPELINE] Construyendo búsqueda...');
   
   let matchConditions = { tiene_precio_valido: true };
+  
+  // 🆕 PRIORIDAD PARA QUERIES CON FILTROS EXTRAÍDOS
+  if (parsedQuery.isFilterQuery && parsedQuery.extractedFilters) {
+    console.log('🎯 [PIPELINE] Búsqueda con filtros extraídos:', parsedQuery.extractedFilters);
+    
+    const filters = parsedQuery.extractedFilters;
+    
+    // Filtro por categoría principal
+    if (filters.categoria) {
+      if (CATEGORIAS[filters.categoria]) {
+        matchConditions.categoria = { $in: CATEGORIAS[filters.categoria] };
+      } else {
+        matchConditions.categoria = filters.categoria;
+      }
+    }
+    
+    // Filtros de aplicaciones
+    const aplicacionFilters = [];
+    
+    if (filters.marca) {
+      aplicacionFilters.push({ "aplicaciones.marca": filters.marca });
+    }
+    
+    if (filters.modelo) {
+      aplicacionFilters.push({ "aplicaciones.modelo": filters.modelo });
+    }
+    
+    if (filters.version) {
+      aplicacionFilters.push({ "aplicaciones.version": filters.version });
+    }
+    
+    // Si hay filtros de aplicación, usar $elemMatch
+    if (aplicacionFilters.length > 0) {
+      matchConditions.aplicaciones = {
+        $elemMatch: {
+          $and: aplicacionFilters.map(filter => {
+            const key = Object.keys(filter)[0].replace('aplicaciones.', '');
+            return { [key]: filter[Object.keys(filter)[0]] };
+          })
+        }
+      };
+    }
+    
+    const pipeline = [
+      { $match: matchConditions },
+      { $sort: { codigo: 1 } }
+    ];
+
+    if (offset > 0) pipeline.push({ $skip: offset });
+    pipeline.push({ $limit: limit });
+    pipeline.push({ $project: { _id: 0 } });
+
+    return pipeline;
+  }
   
   // 🆕 PRIORIDAD PARA CÓDIGOS EXACTOS
   if (parsedQuery.isExactCode) {
@@ -279,7 +360,6 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
 
   return pipeline;
 }
-
 // ===== ENDPOINTS PRINCIPALES =====
 
 // 🏥 PING - Verificar conexión
