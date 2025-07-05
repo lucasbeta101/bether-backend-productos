@@ -113,9 +113,14 @@ function mapPositionForSearch(position) {
 // ===== PARSER SIMPLE (UNA SOLA FUNCIÓN) =====
 function parseNaturalQuery(query) {
   console.log('🧐 [PARSER] Analizando:', query);
+  
   const STOP_WORDS = ['para', 'de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'con', 'mi', 'auto'];
   const productKeywords = ['amortiguador', 'pastilla', 'freno', 'disco', 'cazoleta', 'bieleta', 'rotula', 'embrague', 'brazo', 'extremo', 'axial', 'homocinetica'];
   const positionKeywords = ['delantero', 'trasero', 'izquierdo', 'derecho', 'del', 'pos', 'izq', 'der'];
+  
+  // 🆕 DETECCIÓN DE CÓDIGO EXACTO
+  const trimmedQuery = query.trim();
+  const isLikelyCode = /^[A-Za-z0-9\-_]+$/.test(trimmedQuery) && trimmedQuery.length >= 3;
   
   const normalized = normalizeText(query);
   const words = normalized.split(' ').filter(word => !STOP_WORDS.includes(word) && word.length > 1);
@@ -125,7 +130,10 @@ function parseNaturalQuery(query) {
     position: null, 
     year: null, 
     vehicleTerms: [], 
-    isStructured: false, 
+    isStructured: false,
+    // 🆕 NUEVAS PROPIEDADES PARA CÓDIGO
+    isExactCode: isLikelyCode,
+    exactCode: isLikelyCode ? trimmedQuery : null,
     freeText: query 
   };
 
@@ -160,6 +168,42 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
   
   let matchConditions = { tiene_precio_valido: true };
   
+  // 🆕 PRIORIDAD PARA CÓDIGOS EXACTOS
+  if (parsedQuery.isExactCode) {
+    console.log('🔍 [PIPELINE] Búsqueda por código exacto:', parsedQuery.exactCode);
+    
+    matchConditions = {
+      tiene_precio_valido: true,
+      $or: [
+        { codigo: parsedQuery.exactCode },
+        { codigo: { $regex: parsedQuery.exactCode, $options: 'i' } },
+        { nombre: { $regex: parsedQuery.exactCode, $options: 'i' } }
+      ]
+    };
+    
+    const pipeline = [
+      { $match: matchConditions },
+      {
+        $addFields: {
+          exactMatch: {
+            $cond: {
+              if: { $eq: ["$codigo", parsedQuery.exactCode] },
+              then: 1,
+              else: 0
+            }
+          }
+        }
+      },
+      { $sort: { exactMatch: -1, codigo: 1 } },
+      { $project: { exactMatch: 0, _id: 0 } }
+    ];
+
+    if (offset > 0) pipeline.push({ $skip: offset });
+    pipeline.push({ $limit: limit });
+    return pipeline;
+  }
+  
+  // RESTO DE LA LÓGICA ORIGINAL SIN CAMBIOS
   if (parsedQuery.isStructured) {
     console.log('🎯 [PIPELINE] Búsqueda estructurada');
     
