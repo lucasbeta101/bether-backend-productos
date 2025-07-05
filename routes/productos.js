@@ -709,24 +709,17 @@ router.get('/sugerencias', async (req, res) => {
 // 📂 CATEGORÍAS
 router.get('/categorias', async (req, res) => {
   try {
-    const client = await connectToMongoDB();
-    const db = client.db(DB_NAME);
-    const collection = db.collection(COLLECTION_NAME);
+    console.log('📂 [CATEGORIAS] Solicitando categorías principales...');
 
-    // Obtener todas las categorías únicas con productos válidos
-    const categorias = await collection.distinct('categoria', { 
-      tiene_precio_valido: true 
-    });
+    // 🎯 SOLO CATEGORÍAS PRINCIPALES (las keys del objeto CATEGORIAS)
+    const categoriasPrincipales = Object.keys(CATEGORIAS).sort();
 
-    // Ordenar alfabéticamente
-    categorias.sort();
-
-    console.log(`📂 [CATEGORIAS] ${categorias.length} categorías encontradas`);
+    console.log(`📂 [CATEGORIAS] ${categoriasPrincipales.length} categorías principales:`, categoriasPrincipales);
 
     res.json({
       success: true,
-      data: categorias,
-      count: categorias.length,
+      data: categoriasPrincipales,
+      count: categoriasPrincipales.length,
       timestamp: new Date().toISOString()
     });
 
@@ -962,7 +955,6 @@ router.get('/versiones', async (req, res) => {
   }
 });
 
-// 🔍 BÚSQUEDA CON FILTROS COMBINADOS
 router.get('/busqueda-filtrada', async (req, res) => {
   try {
     const { 
@@ -991,12 +983,27 @@ router.get('/busqueda-filtrada', async (req, res) => {
     // Construir condiciones de filtrado
     let matchConditions = { tiene_precio_valido: true };
 
-    // Filtro por categoría
+    // 🎯 FILTRO POR CATEGORÍA PRINCIPAL
     if (categoria && categoria !== 'todos') {
+      // Verificar si es una categoría principal válida
       if (CATEGORIAS[categoria]) {
+        console.log(`🎯 Categoría principal: ${categoria}`);
+        console.log(`📋 Buscando en subcategorías:`, CATEGORIAS[categoria]);
+        
+        // Buscar en todas las subcategorías que pertenecen a esta categoría principal
         matchConditions.categoria = { $in: CATEGORIAS[categoria] };
       } else {
-        matchConditions.categoria = categoria;
+        console.log(`⚠️ Categoría no reconocida: ${categoria}`);
+        // Si no es una categoría principal válida, no devolver resultados
+        return res.json({
+          success: true,
+          results: [],
+          count: 0,
+          totalResults: 0,
+          filtros: { categoria, marca, modelo, version },
+          error: `Categoría "${categoria}" no encontrada`,
+          timestamp: new Date().toISOString()
+        });
       }
     }
 
@@ -1058,6 +1065,13 @@ router.get('/busqueda-filtrada', async (req, res) => {
     const totalResultados = countResult[0]?.total || 0;
 
     console.log(`✅ [BÚSQUEDA-FILTRADA] ${productos.length}/${totalResultados} productos encontrados en ${processingTime}ms`);
+    
+    // Info adicional sobre la búsqueda
+    const infoAdicional = {};
+    if (categoria && CATEGORIAS[categoria]) {
+      infoAdicional.subcategoriasIncluidas = CATEGORIAS[categoria];
+      infoAdicional.totalSubcategorias = CATEGORIAS[categoria].length;
+    }
 
     res.json({
       success: true,
@@ -1065,6 +1079,7 @@ router.get('/busqueda-filtrada', async (req, res) => {
       count: productos.length,
       totalResults: totalResultados,
       filtros: { categoria, marca, modelo, version },
+      busquedaInfo: infoAdicional,
       pagination: {
         limit: parseInt(limit),
         offset: parseInt(offset),
