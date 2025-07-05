@@ -444,11 +444,7 @@ router.get('/producto-completo/:codigo', async (req, res) => {
     });
   }
 });
-db.productos.createIndex({ "tiene_precio_valido": 1, "codigo": 1 })
-db.productos.createIndex({ "categoria": 1, "codigo": 1 })
-db.productos.createIndex({ "aplicaciones.marca": 1 })
-db.productos.createIndex({ "aplicaciones.modelo": 1 })
-db.productos.createIndex({ "codigo": 1 }, { unique: true })
+
 // 🔍 BÚSQUEDA PRINCIPAL
 router.get('/busqueda', async (req, res) => {
   try {
@@ -602,5 +598,17 @@ router.get('/sugerencias', async (req, res) => {
     });
   }
 });
+
+
+// Al final de productos.js, reemplazar las líneas problemáticas por:
+
+// 🚀 FUNCIÓN PARA CREAR ÍNDICES (ejecutar manualmente desde MongoDB Compass o shell)
+// ESTOS COMANDOS DEBEN EJECUTARSE DIRECTAMENTE EN MONGODB, NO EN NODE.JS:
+//
+// db.productos.createIndex({ "tiene_precio_valido": 1, "codigo": 1 })
+// db.productos.createIndex({ "categoria": 1, "codigo": 1 })
+// db.productos.createIndex({ "aplicaciones.marca": 1 })
+// db.productos.createIndex({ "aplicaciones.modelo": 1 })
+// db.productos.createIndex({ "codigo": 1 }, { unique: true })
 
 module.exports = router;
