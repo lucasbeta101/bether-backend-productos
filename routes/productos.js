@@ -44,19 +44,35 @@ router.use((req, res, next) => {
   next();
 });
 
-// ===== CATEGORÍAS SIMPLIFICADAS =====
 const CATEGORIAS = {
   "Amortiguadores": [
     "Amort CORVEN", "Amort SADAR", "Amort SUPER PICKUP",
     "Amort LIP", "Amort PRO TUNNING"
   ],
-  "Pastillas de Freno": ["Pastillas CORVEN C", "Pastillas CORVEN HT", "Pastillas FERODO", "Pastillas JURID"],
+  "Barras": ["Barras HD SADAR"],
+  "Bieletas": ["Bieletas CORVEN", "Bieletas SADAR"],
+  "Brazos Suspension": ["Brazos Susp CORVEN","Brazos Susp SADAR",],
+  "Cazoletas": ["Cazoletas CORVEN", "Cazoletas SADAR"],
   "Discos y Campanas": ["Discos y Camp HF", "Discos y Camp CORVEN"],
+  "Extremos": ["Extremos CORVEN", "Extremos SADAR"],
+  "Axiales": ["Axiales CORVEN", "Axiales SADAR"],
+  "Homocinéticas": ["Homocinéticas CORVEN", "Homocinéticas SADAR"],
+  "Parrillas": ["Parrillas CORVEN", "Parrillas SADAR"],
+  "Pastillas de Freno": ["Pastillas CORVEN C", "Pastillas CORVEN HT", "Pastillas FERODO", "Pastillas JURID"],
+  "Rótulas": ["Rotulas CORVEN", "Rotulas SADAR"],
   "Embragues": ["Embragues CORVEN", "Embragues SADAR", "Embragues VALEO"],
-  "Suspension": ["Bieletas CORVEN", "Bieletas SADAR", "Cazoletas CORVEN", "Cazoletas SADAR", "Rotulas CORVEN", "Rotulas SADAR"],
-  "Direccion": ["Extremos CORVEN", "Extremos SADAR", "Axiales CORVEN", "Axiales SADAR"],
-  "Otros": ["Brazos Susp CORVEN", "Brazos Susp SADAR", "Barras HD SADAR", "Homocinéticas CORVEN", "Homocinéticas SADAR"]
+  "Cajas y Bombas": ["Bombas Hid CORVEN", "Cajas Hid CORVEN", "Cajas Mec CORVEN"],
+  "Rodamientos": ["Rodamientos CORVEN", "Rodamientos SADAR"],
+  "Mazas": ["Mazas CORVEN", "Mazas HF"],
+  "Semiejes": ["Semiejes CORVEN"],
+  "Soportes Motor": ["Soporte Motor CORVEN"],
+  "Suspensión Neumática": ["Susp Neumática SADAR"],
+  "CTR": ["CTR"],
+  "FTE": ["FTE"],
+  "Gas Spring Stabilus": ["Gas Spring Stabilus"],
+  "Otros": ["Otros"]
 };
+
 
 // ===== FUNCIONES AUXILIARES SIMPLES =====
 function normalizeText(text) {
