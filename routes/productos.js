@@ -247,31 +247,195 @@ router.get('/ping', async (req, res) => {
 // 📋 METADATOS - Para inicialización del frontend
 router.get('/metadatos', async (req, res) => {
   try {
+    const { 
+      pagina = 1, 
+      limite = 50,  // Cargar de a 50 en lugar de 4000+
+      categoria = null,
+      solo_conteo = false  // Para obtener solo el conteo total
+    } = req.query;
+
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
-    const metadatos = await collection.find({}, {
-      projection: {
-        codigo: 1,
-        categoria: 1,
-        marca: 1,
-        nombre: 1,
-        aplicaciones: 1,
-        detalles_tecnicos: 1,
-        precio_lista_con_iva: 1,
-        precio_numerico: 1,
-        tiene_precio_valido: 1,
-        imagen: 1,
-        equivalencias: 1,
-        _id: 0
+    // Si solo necesita el conteo (para inicialización rápida)
+    if (solo_conteo === 'true') {
+      const totalCount = await collection.countDocuments({ tiene_precio_valido: true });
+      return res.json({
+        success: true,
+        count: totalCount,
+        data: [],
+        pagination: {
+          totalProductos: totalCount,
+          totalPaginas: Math.ceil(totalCount / 50)
+        }
+      });
+    }
+
+    // Filtros base
+    let matchConditions = { tiene_precio_valido: true };
+    
+    if (categoria && categoria !== 'todos') {
+      if (CATEGORIAS[categoria]) {
+        matchConditions.categoria = { $in: CATEGORIAS[categoria] };
+      } else {
+        matchConditions.categoria = categoria;
       }
-    }).toArray();
+    }
+
+    // Pipeline optimizado con proyección mínima
+    const pipeline = [
+      { $match: matchConditions },
+      { $sort: { codigo: 1 } },
+      {
+        $facet: {
+          productos: [
+            { $skip: (parseInt(pagina) - 1) * parseInt(limite) },
+            { $limit: parseInt(limite) },
+            { 
+              $project: { 
+                _id: 0,
+                codigo: 1,
+                nombre: 1,
+                categoria: 1,
+                marca: 1,
+                precio_lista_con_iva: 1,
+                precio_numerico: 1,
+                tiene_precio_valido: 1,
+                // 🎯 IMAGEN OPTIMIZADA - Solo cargar placeholder inicialmente
+                imagen: { $ifNull: ["$imagen", "/img/placeholder-producto.webp"] },
+                // 🎯 APLICACIONES LIMITADAS - Solo las primeras 2
+                aplicaciones: { $slice: ["$aplicaciones", 2] },
+                // 🎯 DETALLES BÁSICOS - Solo posición
+                "detalles_tecnicos.Posición de la pieza": "$detalles_tecnicos.Posición de la pieza"
+              } 
+            }
+          ],
+          totalCount: [
+            { $count: "count" }
+          ]
+        }
+      }
+    ];
+
+    console.log(`📦 [METADATOS-OPTIMIZADO] Cargando página ${pagina}, límite ${limite}`);
+    const startTime = Date.now();
+    
+    const results = await collection.aggregate(pipeline).toArray();
+    const processingTime = Date.now() - startTime;
+
+    const productos = results[0].productos || [];
+    const totalProductos = results[0].totalCount[0]?.count || 0;
+
+    console.log(`✅ [METADATOS-OPTIMIZADO] ${productos.length} productos en ${processingTime}ms`);
+
+    // 🆕 RESPUESTA COMPATIBLE CON FRONTEND EXISTENTE
+    res.json({
+      success: true,
+      count: productos.length,
+      data: productos,
+      // 🎯 DATOS ADICIONALES PARA OPTIMIZACIÓN
+      pagination: {
+        paginaActual: parseInt(pagina),
+        limite: parseInt(limite),
+        totalProductos: totalProductos,
+        totalPaginas: Math.ceil(totalProductos / parseInt(limite)),
+        tieneMas: productos.length === parseInt(limite)
+      },
+      processingTime: processingTime,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [METADATOS-OPTIMIZADO] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+router.get('/filtros-rapidos', async (req, res) => {
+  try {
+    const { categoria = null } = req.query;
+    
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    let matchConditions = { tiene_precio_valido: true };
+    
+    if (categoria && categoria !== 'todos') {
+      if (CATEGORIAS[categoria]) {
+        matchConditions.categoria = { $in: CATEGORIAS[categoria] };
+      } else {
+        matchConditions.categoria = categoria;
+      }
+    }
+
+    // Pipeline súper optimizado para filtros
+    const pipeline = [
+      { $match: matchConditions },
+      { $unwind: "$aplicaciones" },
+      {
+        $group: {
+          _id: null,
+          marcas: { $addToSet: "$aplicaciones.marca" },
+          modelos: { $addToSet: "$aplicaciones.modelo" }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          marcas: { $sortArray: { input: "$marcas", sortBy: 1 } },
+          modelos: { $sortArray: { input: "$modelos", sortBy: 1 } }
+        }
+      }
+    ];
+
+    const resultado = await collection.aggregate(pipeline).toArray();
+    const filtros = resultado[0] || { marcas: [], modelos: [] };
 
     res.json({
       success: true,
-      count: metadatos.length,
-      data: metadatos
+      data: filtros,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [FILTROS-RAPIDOS] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 🎯 ENDPOINT PARA CARGAR DETALLES COMPLETOS DE PRODUCTOS (lazy loading)
+router.get('/producto-completo/:codigo', async (req, res) => {
+  try {
+    const { codigo } = req.params;
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Cargar producto con TODOS los detalles
+    const producto = await collection.findOne(
+      { codigo: codigo },
+      { 
+        projection: { _id: 0 } // Todos los campos
+      }
+    );
+
+    if (!producto) {
+      return res.status(404).json({
+        success: false,
+        error: 'Producto no encontrado'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: producto
     });
   } catch (error) {
     res.status(500).json({
@@ -280,7 +444,11 @@ router.get('/metadatos', async (req, res) => {
     });
   }
 });
-
+db.productos.createIndex({ "tiene_precio_valido": 1, "codigo": 1 })
+db.productos.createIndex({ "categoria": 1, "codigo": 1 })
+db.productos.createIndex({ "aplicaciones.marca": 1 })
+db.productos.createIndex({ "aplicaciones.modelo": 1 })
+db.productos.createIndex({ "codigo": 1 }, { unique: true })
 // 🔍 BÚSQUEDA PRINCIPAL
 router.get('/busqueda', async (req, res) => {
   try {
