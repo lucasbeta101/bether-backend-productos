@@ -1740,24 +1740,88 @@ router.get('/sitemap.xml', async (req, res) => {
     });
   }
 });
-app.get('/api/producto-por-slug/:slug', async (req, res) => {
-  const { slug } = req.params;
-  
-  // Buscar producto que genere este slug
-  const productos = await obtenerProductos();
-  const producto = productos.find(p => crearSlugProducto(p) === slug);
-  
-  if (producto) {
-    res.json({ success: true, data: producto });
-  } else {
-    res.status(404).json({ success: false, error: 'Producto no encontrado' });
+
+router.get('/producto-por-slug/:slug', async (req, res) => {
+  try {
+    const { slug } = req.params;
+    
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Buscar todos los productos y comparar slugs
+    const productos = await collection.find({ tiene_precio_valido: true }).limit(500).toArray();
+    
+    const producto = productos.find(p => {
+      const slugGenerado = crearSlugSimple(p);
+      return slugGenerado === slug;
+    });
+
+    if (!producto) {
+      return res.status(404).json({ success: false, error: 'Producto no encontrado' });
+    }
+
+    const productoConSEO = procesarProductoConSEO(producto);
+    
+    res.json({ 
+      success: true, 
+      data: productoConSEO
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
-// ===== FUNCIONES SEO PARA GENERAR CONTENIDO DESCRIPTIVO =====
 
-/**
- * Genera un nombre descriptivo y SEO-friendly para un producto
- */
+// 🛠️ FUNCIÓN SIMPLE PARA CREAR SLUG
+function crearSlugSimple(producto) {
+  const nombre = producto.nombre_descriptivo || producto.nombre || '';
+  
+  return nombre
+    .replace(/\s*-\s*[\w\d]+\.-[A-Z]+.*$/i, '') // Quitar código del final
+    .replace(/\bpara\b/gi, '')                    // Quitar "para"
+    .replace(/\bSIN ESPECIFICAR\b/gi, '')        // Quitar "SIN ESPECIFICAR"
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')             // Quitar acentos
+    .replace(/[^\w\s-]/g, ' ')                   // Solo letras y números
+    .replace(/\s+/g, '-')                        // Espacios a guiones
+    .replace(/--+/g, '-')                        // Múltiples guiones a uno
+    .replace(/^-|-$/g, '')                       // Quitar guiones extremos
+    .substring(0, 80);                           // Máximo 80 caracteres
+}
+
+// 🎯 ENDPOINT PARA GENERAR SLUG (testing)
+router.get('/generar-slug/:codigo', async (req, res) => {
+  try {
+    const { codigo } = req.params;
+    
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const producto = await collection.findOne({ codigo: codigo });
+    
+    if (!producto) {
+      return res.status(404).json({ success: false, error: 'Producto no encontrado' });
+    }
+
+    const productoConSEO = procesarProductoConSEO(producto);
+    const slug = crearSlugSimple(productoConSEO);
+
+    res.json({
+      success: true,
+      codigo: codigo,
+      slug: slug,
+      nombre_descriptivo: productoConSEO.nombre_descriptivo,
+      url_legacy: `/producto?id=${codigo}`,
+      url_seo: `/producto-${slug}`
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 function generarNombreDescriptivo(producto) {
   // Extraer categoría base (sin marca)
   const categoriaBase = producto.categoria?.replace(/^(Amort|Pastillas|Embragues|Discos y Camp|Rotulas|Brazos Susp)\s+\w+$/, '$1') || '';
