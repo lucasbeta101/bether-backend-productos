@@ -1801,6 +1801,9 @@ function generarNombreDescriptivo(producto) {
 /**
  * Formatea las aplicaciones de un producto de manera legible
  */
+/**
+ * Formatea las aplicaciones de un producto de manera legible
+ */
 function formatearAplicaciones(aplicaciones) {
   if (!aplicaciones || aplicaciones.length === 0) return '';
   
@@ -1820,30 +1823,67 @@ function formatearAplicaciones(aplicaciones) {
       if (app.version) {
         const version = app.version.toLowerCase();
         
-        // Formato ../81 significa hasta 1981
+        // 🔧 FIX: Formato ../11 significa hasta 2011 (NO 1911)
         if (version.includes('../')) {
           const año = version.match(/(\d{2,4})/)?.[1];
           if (año) {
-            const añoCompleto = año.length === 2 ? `19${año}` : año;
+            let añoCompleto;
+            if (año.length === 2) {
+              const añoNum = parseInt(año, 10);
+              // ✅ LÓGICA CORREGIDA: 00-30 = 2000s, 31-99 = 1900s
+              if (añoNum <= 30) {
+                añoCompleto = `20${año.padStart(2, '0')}`;
+              } else {
+                añoCompleto = `19${año}`;
+              }
+            } else {
+              añoCompleto = año;
+            }
             modelo += ` (hasta ${añoCompleto})`;
           }
         }
-        // Formato 82/.. significa desde 1982
+        // 🔧 FIX: Formato 11/.. significa desde 2011 (NO 1911)
         else if (version.includes('/..')) {
           const año = version.match(/(\d{2,4})/)?.[1];
           if (año) {
-            const añoCompleto = año.length === 2 ? `19${año}` : año;
+            let añoCompleto;
+            if (año.length === 2) {
+              const añoNum = parseInt(año, 10);
+              // ✅ LÓGICA CORREGIDA
+              if (añoNum <= 30) {
+                añoCompleto = `20${año.padStart(2, '0')}`;
+              } else {
+                añoCompleto = `19${año}`;
+              }
+            } else {
+              añoCompleto = año;
+            }
             modelo += ` (desde ${añoCompleto})`;
           }
         }
-        // Rango de años 75/82
+        // 🔧 FIX: Rango de años 03/11 = 2003-2011 (NO 1903-1911)
         else if (version.match(/\d{2,4}\/\d{2,4}/)) {
           const [año1, año2] = version.match(/(\d{2,4})\/(\d{2,4})/).slice(1);
-          const año1Completo = año1.length === 2 ? `19${año1}` : año1;
-          const año2Completo = año2.length === 2 ? `19${año2}` : año2;
+          
+          // ✅ FUNCIÓN PARA CONVERTIR AÑOS CORRECTAMENTE
+          const convertirAño = (año) => {
+            if (año.length === 2) {
+              const añoNum = parseInt(año, 10);
+              // Regla: 00-30 = 2000s, 31-99 = 1900s
+              if (añoNum <= 30) {
+                return `20${año.padStart(2, '0')}`;
+              } else {
+                return `19${año}`;
+              }
+            }
+            return año; // Si ya tiene 4 dígitos, no cambiar
+          };
+          
+          const año1Completo = convertirAño(año1);
+          const año2Completo = convertirAño(año2);
           modelo += ` (${año1Completo}-${año2Completo})`;
         }
-        // Otros formatos
+        // Otros formatos (mantener igual)
         else if (!version.includes('(') && version.trim()) {
           modelo += ` ${app.version}`;
         }
