@@ -9,9 +9,25 @@ const PORT = process.env.PORT || 3000;
 
 // ===== MIDDLEWARE =====
 app.use(cors({
-  origin: ['https://bethersa.com.ar', 'http://localhost:3000', 'http://127.0.0.1:5500'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  origin: [
+    // Dominios de producción
+    'https://bethersa.com.ar',
+    'https://www.bethersa.com.ar',
+    'https://bethersa.online', 
+    'https://www.bethersa.online',
+    'https://bethersa.store',
+    'https://www.bethersa.store',
+    
+    // Desarrollo local
+    'http://localhost:3000',
+    'http://localhost:5000', 
+    'http://127.0.0.1:5500',
+    'http://localhost:8080'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true,
+  optionsSuccessStatus: 200 // Para navegadores legacy
 }));
 
 app.use(express.json({ limit: '10mb' }));
