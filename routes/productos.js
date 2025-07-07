@@ -1740,6 +1740,19 @@ router.get('/sitemap.xml', async (req, res) => {
     });
   }
 });
+app.get('/api/producto-por-slug/:slug', async (req, res) => {
+  const { slug } = req.params;
+  
+  // Buscar producto que genere este slug
+  const productos = await obtenerProductos();
+  const producto = productos.find(p => crearSlugProducto(p) === slug);
+  
+  if (producto) {
+    res.json({ success: true, data: producto });
+  } else {
+    res.status(404).json({ success: false, error: 'Producto no encontrado' });
+  }
+});
 // ===== FUNCIONES SEO PARA GENERAR CONTENIDO DESCRIPTIVO =====
 
 /**
