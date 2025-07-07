@@ -701,11 +701,17 @@ router.get('/producto/:codigo', async (req, res) => {
       });
     }
 
+    // ✅ PROCESAR PRODUCTO CON DATOS SEO
+    const productoConSEO = procesarProductoConSEO(producto);
+
+    console.log(`✅ [PRODUCTO-SEO] ${codigo}: "${productoConSEO.nombre_descriptivo}"`);
+
     res.json({
       success: true,
-      data: producto
+      data: productoConSEO
     });
   } catch (error) {
+    console.error('❌ [PRODUCTO] Error:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -811,7 +817,199 @@ router.get('/categorias', async (req, res) => {
     });
   }
 });
+router.get('/categoria/:categoria', async (req, res) => {
+  try {
+    const { categoria } = req.params;
+    
+    // Mapear categorías URL-friendly a categorías reales
+    const mapeoCategories = {
+      'amortiguadores': 'Amortiguadores',
+      'amortiguadores-corven': 'Amort CORVEN',
+      'amortiguadores-sadar': 'Amort SADAR',
+      'amortiguadores-lip': 'Amort LIP',
+      'pastillas-freno': 'Pastillas de Freno',
+      'suspension': 'Brazos Suspension',
+      'embragues': 'Embragues',
+      'rotulas': 'Rótulas'
+    };
 
+    const categoriaReal = mapeoCategories[categoria];
+    if (!categoriaReal) {
+      return res.status(404).send('Categoría no encontrada');
+    }
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Obtener productos de la categoría
+    let matchConditions = { tiene_precio_valido: true };
+    
+    if (CATEGORIAS[categoriaReal]) {
+      matchConditions.categoria = { $in: CATEGORIAS[categoriaReal] };
+    } else {
+      matchConditions.categoria = categoriaReal;
+    }
+
+    const productos = await collection.find(matchConditions)
+      .limit(50)
+      .toArray();
+
+    // Generar contenido SEO específico
+    const contenidoSEO = generarContenidoCategoriaSEO(categoriaReal, productos);
+
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${contenidoSEO.titulo}</title>
+    <meta name="description" content="${contenidoSEO.descripcion}">
+    <meta name="keywords" content="${contenidoSEO.keywords}">
+    
+    <!-- Open Graph -->
+    <meta property="og:title" content="${contenidoSEO.titulo}">
+    <meta property="og:description" content="${contenidoSEO.descripcion}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://bethersa.com.ar/api/categoria/${categoria}">
+    <meta property="og:image" content="https://bethersa.com.ar/Imagenes/Logos/Empresa/Bether.png">
+    
+    <!-- Canonical -->
+    <link rel="canonical" href="https://bethersa.com.ar/api/categoria/${categoria}">
+    
+    <!-- Schema.org -->
+    <script type="application/ld+json">
+    ${JSON.stringify(contenidoSEO.schema, null, 2)}
+    </script>
+    
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; margin-bottom: 40px; }
+        .productos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
+        .producto-card { border: 1px solid #ddd; padding: 15px; border-radius: 8px; }
+        .producto-card h3 { margin: 0 0 10px 0; color: #333; }
+        .precio { color: #e63946; font-weight: bold; }
+        .aplicaciones { font-size: 12px; color: #666; margin-top: 10px; }
+        .cta-section { background: #f8f9fa; padding: 30px; margin: 40px 0; text-align: center; border-radius: 8px; }
+        .btn-catalogo { background: #e63946; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>${contenidoSEO.h1}</h1>
+        <p>${contenidoSEO.descripcionLarga}</p>
+    </div>
+
+    <div class="productos-grid">
+        ${productos.map(producto => {
+          const productoConSEO = procesarProductoConSEO(producto);
+          return `
+            <div class="producto-card">
+                <h3>${productoConSEO.nombre_descriptivo}</h3>
+                <p><strong>Código:</strong> ${producto.codigo}</p>
+                <p class="precio">${producto.precio_lista_con_iva || 'Consultar'}</p>
+                ${producto.aplicaciones ? `
+                    <div class="aplicaciones">
+                        <strong>Compatible con:</strong> 
+                        ${producto.aplicaciones.slice(0, 3).map(app => `${app.marca} ${app.modelo}`).join(', ')}
+                    </div>
+                ` : ''}
+                <a href="/producto?id=${producto.codigo}" style="color: #e63946;">Ver detalles</a>
+            </div>
+          `;
+        }).join('')}
+    </div>
+
+    <div class="cta-section">
+        <h2>¿Necesitás ayuda para encontrar tu repuesto?</h2>
+        <p>Nuestro equipo te ayuda a encontrar el repuesto exacto para tu vehículo</p>
+        <a href="/catalogo" class="btn-catalogo">Ver catálogo completo</a>
+        <a href="https://wa.me/5492613533219" class="btn-catalogo">Consultar por WhatsApp</a>
+    </div>
+
+    <div style="margin-top: 40px;">
+        <h2>Bethersa - Tu distribuidora de confianza en Mendoza</h2>
+        <p>Desde hace años, Bethersa es líder en la distribución de autopartes en Mendoza y toda la región de Cuyo. 
+        Trabajamos con las mejores marcas como CORVEN, SADAR, FERODO, JURID y VALEO para ofrecerte repuestos 
+        de calidad garantizada.</p>
+        
+        <p>📍 <strong>Ubicación:</strong> Minuzzi 428, Godoy Cruz, Mendoza</p>
+        <p>📞 <strong>Teléfono:</strong> 2613 53-3219</p>
+        <p>✉️ <strong>Email:</strong> info@bethersa.com.ar</p>
+    </div>
+</body>
+</html>`;
+
+    res.send(html);
+
+  } catch (error) {
+    console.error('❌ [CATEGORIA-SEO] Error:', error);
+    res.status(500).send('Error interno del servidor');
+  }
+});
+
+/**
+ * Genera contenido SEO específico para cada categoría
+ */
+function generarContenidoCategoriaSEO(categoria, productos) {
+  const contenidoPorCategoria = {
+    'Amortiguadores': {
+      titulo: 'Amortiguadores para Auto - CORVEN, SADAR, LIP | Bethersa Mendoza',
+      h1: 'Amortiguadores de Calidad para tu Vehículo',
+      descripcion: 'Amortiguadores CORVEN, SADAR y LIP en Mendoza. Stock permanente para todas las marcas. ✅ Garantía ✅ Entrega inmediata ✅ Mejores precios',
+      descripcionLarga: 'Encontrá el amortiguador perfecto para tu auto en Bethersa. Trabajamos con las mejores marcas: CORVEN, SADAR, LIP, SUPER PICKUP y PRO TUNNING. Stock permanente para Ford, Volkswagen, Chevrolet, Peugeot, Renault, Fiat, Toyota y más.',
+      keywords: 'amortiguadores, amortiguador corven, amortiguador sadar, amortiguadores mendoza, repuestos auto mendoza, amortiguador delantero, amortiguador trasero, bethersa'
+    },
+    'Amort CORVEN': {
+      titulo: 'Amortiguadores CORVEN - Línea Completa | Bethersa Mendoza',
+      h1: 'Amortiguadores CORVEN - Máxima Calidad y Durabilidad',
+      descripcion: 'Amortiguadores CORVEN originales en Mendoza. Línea completa para todas las marcas de autos. ✅ Garantía de fábrica ✅ Stock inmediato ✅ Instalación',
+      descripcionLarga: 'Los amortiguadores CORVEN son sinónimo de calidad y durabilidad. En Bethersa tenemos la línea completa: delanteros, traseros, para todas las marcas y modelos. Con más de 30 años en el mercado, CORVEN es tu garantía de seguridad.',
+      keywords: 'amortiguador corven, corven argentina, amortiguadores corven mendoza, repuestos corven, amortiguador gas corven'
+    },
+    'Pastillas de Freno': {
+      titulo: 'Pastillas de Freno FERODO, JURID, CORVEN | Bethersa Mendoza',
+      h1: 'Pastillas de Freno de Primera Calidad',
+      descripcion: 'Pastillas de freno FERODO, JURID y CORVEN en Mendoza. Máxima seguridad para tu frenado. ✅ Instalación profesional ✅ Garantía ✅ Stock permanente',
+      descripcionLarga: 'La seguridad al frenar no tiene precio. En Bethersa encontrás pastillas de freno de las mejores marcas: FERODO, JURID y CORVEN. Para todas las marcas de autos, con garantía de fábrica.',
+      keywords: 'pastillas freno, pastillas ferodo, pastillas jurid, pastillas corven, frenos mendoza, pastillas freno mendoza'
+    }
+  };
+
+  const contenido = contenidoPorCategoria[categoria] || {
+    titulo: `${categoria} | Bethersa Mendoza`,
+    h1: categoria,
+    descripcion: `${categoria} de calidad en Bethersa Mendoza. Stock permanente y mejores precios.`,
+    descripcionLarga: `Encontrá ${categoria.toLowerCase()} de calidad en Bethersa, tu distribuidora de confianza en Mendoza.`,
+    keywords: `${categoria.toLowerCase()}, repuestos auto mendoza, bethersa`
+  };
+
+  // Agregar Schema.org
+  contenido.schema = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": contenido.h1,
+    "description": contenido.descripcion,
+    "numberOfItems": productos.length,
+    "itemListElement": productos.slice(0, 10).map((producto, index) => ({
+      "@type": "Product",
+      "position": index + 1,
+      "name": producto.nombre,
+      "sku": producto.codigo,
+      "offers": {
+        "@type": "Offer",
+        "priceCurrency": "ARS",
+        "availability": "https://schema.org/InStock",
+        "seller": {
+          "@type": "Organization",
+          "name": "Bethersa S.A."
+        }
+      }
+    }))
+  };
+
+  return contenido;
+}
 // 🚗 MARCAS (filtradas por categoría)
 router.get('/marcas', async (req, res) => {
   try {
@@ -1326,16 +1524,527 @@ router.get('/filtros-autocomplete', async (req, res) => {
     });
   }
 });
+// 🗺️ ENDPOINT PARA SITEMAP XML DINÁMICO CON TODOS LOS PRODUCTOS
+router.get('/sitemap-productos.xml', async (req, res) => {
+  try {
+    console.log('🗺️ [SITEMAP] Generando sitemap completo...');
+    
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
 
-// Al final de productos.js, reemplazar las líneas problemáticas por:
+    // Obtener productos más populares/importantes (amortiguadores primero)
+    const productos = await collection.find(
+      { tiene_precio_valido: true },
+      { 
+        projection: { 
+          codigo: 1, 
+          categoria: 1,
+          aplicaciones: 1,
+          detalles_tecnicos: 1,
+          marca: 1,
+          convertido_timestamp: 1
+        } 
+      }
+    ).limit(1000) // Limitar para no sobrecargar el sitemap
+    .toArray();
 
-// 🚀 FUNCIÓN PARA CREAR ÍNDICES (ejecutar manualmente desde MongoDB Compass o shell)
-// ESTOS COMANDOS DEBEN EJECUTARSE DIRECTAMENTE EN MONGODB, NO EN NODE.JS:
-//
-// db.productos.createIndex({ "tiene_precio_valido": 1, "codigo": 1 })
-// db.productos.createIndex({ "categoria": 1, "codigo": 1 })
-// db.productos.createIndex({ "aplicaciones.marca": 1 })
-// db.productos.createIndex({ "aplicaciones.modelo": 1 })
-// db.productos.createIndex({ "codigo": 1 }, { unique: true })
+    console.log(`🗺️ [SITEMAP] ${productos.length} productos procesando...`);
+
+    const fechaActual = new Date().toISOString().split('T')[0];
+
+    // Generar XML del sitemap
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`;
+
+    // Páginas principales con máxima prioridad
+    xml += `
+  <url>
+    <loc>https://bethersa.com.ar/</loc>
+    <lastmod>${fechaActual}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  
+  <url>
+    <loc>https://bethersa.com.ar/catalogo</loc>
+    <lastmod>${fechaActual}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  
+  <url>
+    <loc>https://bethersa.com.ar/catalogo?cat=Amortiguadores</loc>
+    <lastmod>${fechaActual}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.95</priority>
+  </url>`;
+
+    // Agrupar productos por categoría para priorizar amortiguadores
+    const productosPorCategoria = productos.reduce((acc, producto) => {
+      const categoria = producto.categoria || 'Otros';
+      if (!acc[categoria]) acc[categoria] = [];
+      acc[categoria].push(producto);
+      return acc;
+    }, {});
+
+    // Procesar amortiguadores primero (máxima prioridad)
+    const categoriesAmortiguadores = Object.keys(productosPorCategoria)
+      .filter(cat => cat.includes('Amort'));
+    
+    categoriesAmortiguadores.forEach(categoria => {
+      const productosCategoria = productosPorCategoria[categoria];
+      
+      productosCategoria.forEach(producto => {
+        const productoConSEO = procesarProductoConSEO(producto);
+        const lastmod = producto.convertido_timestamp ? 
+          new Date(producto.convertido_timestamp).toISOString().split('T')[0] : 
+          fechaActual;
+
+        // URL del producto individual
+        xml += `
+  <url>
+    <loc>https://bethersa.com.ar/producto?id=${encodeURIComponent(producto.codigo)}</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>`;
+
+        // Si el producto tiene aplicaciones, crear URLs específicas
+        if (producto.aplicaciones && producto.aplicaciones.length > 0) {
+          producto.aplicaciones.slice(0, 3).forEach(app => { // Solo primeras 3 aplicaciones
+            if (app.marca && app.modelo) {
+              const searchQuery = `amortiguador ${app.marca} ${app.modelo}`.toLowerCase();
+              xml += `
+  <url>
+    <loc>https://bethersa.com.ar/catalogo?search=${encodeURIComponent(searchQuery)}</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.75</priority>
+  </url>`;
+            }
+          });
+        }
+      });
+    });
+
+    // Resto de productos (menor prioridad)
+    const otrasCategories = Object.keys(productosPorCategoria)
+      .filter(cat => !cat.includes('Amort'))
+      .slice(0, 10); // Limitar otras categorías
+
+    otrasCategories.forEach(categoria => {
+      const productosCategoria = productosPorCategoria[categoria].slice(0, 20); // Máximo 20 por categoría
+      
+      productosCategoria.forEach(producto => {
+        const lastmod = producto.convertido_timestamp ? 
+          new Date(producto.convertido_timestamp).toISOString().split('T')[0] : 
+          fechaActual;
+
+        xml += `
+  <url>
+    <loc>https://bethersa.com.ar/producto?id=${encodeURIComponent(producto.codigo)}</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>`;
+      });
+    });
+
+    // Búsquedas estratégicas de marcas populares
+    const marcasPopulares = ['ford', 'volkswagen', 'chevrolet', 'peugeot', 'renault', 'fiat', 'toyota'];
+    const modelosPopulares = {
+      ford: ['ka', 'fiesta', 'focus', 'escort', 'ranger'],
+      volkswagen: ['gol', 'polo', 'suran', 'saveiro'],
+      chevrolet: ['corsa', 'celta', 'prisma', 's10'],
+      peugeot: ['206', '207', '208', '306', '307', '405', '504'],
+      renault: ['clio', 'megane', 'sandero', 'logan'],
+      fiat: ['palio', 'siena', 'uno'],
+      toyota: ['corolla', 'hilux', 'etios']
+    };
+
+    marcasPopulares.forEach(marca => {
+      const modelos = modelosPopulares[marca] || [];
+      modelos.forEach(modelo => {
+        xml += `
+  <url>
+    <loc>https://bethersa.com.ar/catalogo?search=${encodeURIComponent(`amortiguador ${marca} ${modelo}`)}</loc>
+    <lastmod>${fechaActual}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>`;
+      });
+    });
+
+    // Búsquedas geográficas
+    xml += `
+  <url>
+    <loc>https://bethersa.com.ar/catalogo?search=${encodeURIComponent('amortiguadores mendoza')}</loc>
+    <lastmod>${fechaActual}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  
+  <url>
+    <loc>https://bethersa.com.ar/catalogo?search=${encodeURIComponent('repuestos auto mendoza')}</loc>
+    <lastmod>${fechaActual}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>`;
+
+    xml += '\n</urlset>';
+    
+    console.log(`✅ [SITEMAP] Sitemap generado con ${(xml.match(/<url>/g) || []).length} URLs`);
+
+    res.set({
+      'Content-Type': 'application/xml',
+      'Cache-Control': 'public, max-age=3600', // Cache por 1 hora
+    });
+    
+    res.send(xml);
+
+  } catch (error) {
+    console.error('❌ [SITEMAP] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 🗺️ ENDPOINT PARA SITEMAP INDEX (para manejar múltiples sitemaps)
+router.get('/sitemap.xml', async (req, res) => {
+  try {
+    const fechaActual = new Date().toISOString().split('T')[0];
+    
+    const sitemapIndex = `<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap>
+    <loc>https://bethersa.com.ar/api/sitemap-productos.xml</loc>
+    <lastmod>${fechaActual}</lastmod>
+  </sitemap>
+</sitemapindex>`;
+
+    res.set({
+      'Content-Type': 'application/xml',
+      'Cache-Control': 'public, max-age=3600'
+    });
+    
+    res.send(sitemapIndex);
+
+  } catch (error) {
+    console.error('❌ [SITEMAP-INDEX] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+// ===== FUNCIONES SEO PARA GENERAR CONTENIDO DESCRIPTIVO =====
+
+/**
+ * Genera un nombre descriptivo y SEO-friendly para un producto
+ */
+function generarNombreDescriptivo(producto) {
+  // Extraer categoría base (sin marca)
+  const categoriaBase = producto.categoria?.replace(/^(Amort|Pastillas|Embragues|Discos y Camp|Rotulas|Brazos Susp)\s+\w+$/, '$1') || '';
+  
+  // Mapear categorías a nombres más descriptivos
+  const categoriasDescriptivas = {
+    'Amort': 'Amortiguador',
+    'Pastillas': 'Pastillas de Freno',
+    'Embragues': 'Kit de Embrague',
+    'Discos y Camp': 'Disco de Freno',
+    'Rotulas': 'Rótula',
+    'Brazos Susp': 'Brazo de Suspensión',
+    'Pulmon frenos': 'Cilindro de Freno',
+    'Parrillas': 'Parrilla',
+    'Axiales': 'Axial',
+    'Bieletas': 'Bieleta',
+    'Cazoletas': 'Cazoleta',
+    'Extremos': 'Extremo de Dirección',
+    'Cajas Mec': 'Caja Mecánica',
+    'Bombas Hid': 'Bomba Hidráulica',
+    'Homocinéticas': 'Homocinética',
+    'Rodamientos': 'Rodamiento',
+    'Semiejes': 'Semieje',
+    'Mazas': 'Maza',
+    'Soporte Motor': 'Soporte de Motor'
+  };
+  
+  const categoriaDescriptiva = categoriasDescriptivas[categoriaBase] || categoriaBase;
+  
+  // Obtener posición si existe
+  const posicion = producto.detalles_tecnicos?.["Posición de la pieza"];
+  const posicionTexto = posicion ? posicion.toLowerCase() : '';
+  
+  // Formatear aplicaciones
+  const aplicacionesTexto = formatearAplicaciones(producto.aplicaciones);
+  
+  // Construir nombre descriptivo
+  let nombreDescriptivo = categoriaDescriptiva;
+  
+  if (posicionTexto) {
+    nombreDescriptivo += ` ${posicionTexto}`;
+  }
+  
+  if (aplicacionesTexto) {
+    nombreDescriptivo += ` para ${aplicacionesTexto}`;
+  }
+  
+  // Agregar código al final
+  nombreDescriptivo += ` - ${producto.codigo}`;
+  
+  return nombreDescriptivo;
+}
+
+/**
+ * Formatea las aplicaciones de un producto de manera legible
+ */
+function formatearAplicaciones(aplicaciones) {
+  if (!aplicaciones || aplicaciones.length === 0) return '';
+  
+  // Agrupar por marca
+  const porMarca = aplicaciones.reduce((acc, app) => {
+    if (!acc[app.marca]) acc[app.marca] = [];
+    acc[app.marca].push(app);
+    return acc;
+  }, {});
+  
+  const textosFormateados = Object.entries(porMarca).map(([marca, apps]) => {
+    // Agrupar modelos de la misma marca
+    const modelos = apps.map(app => {
+      let modelo = app.modelo;
+      
+      // Interpretar versiones especiales
+      if (app.version) {
+        const version = app.version.toLowerCase();
+        
+        // Formato ../81 significa hasta 1981
+        if (version.includes('../')) {
+          const año = version.match(/(\d{2,4})/)?.[1];
+          if (año) {
+            const añoCompleto = año.length === 2 ? `19${año}` : año;
+            modelo += ` (hasta ${añoCompleto})`;
+          }
+        }
+        // Formato 82/.. significa desde 1982
+        else if (version.includes('/..')) {
+          const año = version.match(/(\d{2,4})/)?.[1];
+          if (año) {
+            const añoCompleto = año.length === 2 ? `19${año}` : año;
+            modelo += ` (desde ${añoCompleto})`;
+          }
+        }
+        // Rango de años 75/82
+        else if (version.match(/\d{2,4}\/\d{2,4}/)) {
+          const [año1, año2] = version.match(/(\d{2,4})\/(\d{2,4})/).slice(1);
+          const año1Completo = año1.length === 2 ? `19${año1}` : año1;
+          const año2Completo = año2.length === 2 ? `19${año2}` : año2;
+          modelo += ` (${año1Completo}-${año2Completo})`;
+        }
+        // Otros formatos
+        else if (!version.includes('(') && version.trim()) {
+          modelo += ` ${app.version}`;
+        }
+      }
+      
+      return modelo;
+    });
+    
+    return `${marca} ${modelos.join(', ')}`;
+  });
+  
+  return textosFormateados.join(' y ');
+}
+
+/**
+ * Genera título SEO optimizado
+ */
+function generarTituloSEO(producto) {
+  const nombreDescriptivo = generarNombreDescriptivo(producto);
+  const marca = producto.marca || 'Repuesto';
+  
+  return `${nombreDescriptivo} ${marca} | Repuestos Bethersa`;
+}
+
+/**
+ * Genera descripción SEO optimizada
+ */
+function generarDescripcionSEO(producto) {
+  const nombreDescriptivo = generarNombreDescriptivo(producto);
+  const aplicaciones = formatearAplicaciones(producto.aplicaciones);
+  
+  let descripcion = `${nombreDescriptivo} de la marca ${producto.marca || 'original'}`;
+  
+  if (aplicaciones) {
+    descripcion += `. Compatible con ${aplicaciones}`;
+  }
+  
+  // Agregar detalles técnicos relevantes
+  const detalles = [];
+  if (producto.detalles_tecnicos) {
+    if (producto.detalles_tecnicos["Largo Extendido"]) {
+      detalles.push(`Largo extendido: ${producto.detalles_tecnicos["Largo Extendido"]}`);
+    }
+    if (producto.detalles_tecnicos["Anclaje Superior"]) {
+      detalles.push(`Anclaje: ${producto.detalles_tecnicos["Anclaje Superior"]}`);
+    }
+  }
+  
+  if (detalles.length > 0) {
+    descripcion += `. ${detalles.join(', ')}`;
+  }
+  
+  descripcion += `. Código: ${producto.codigo}`;
+  
+  // Truncar a 160 caracteres para SEO
+  return descripcion.substring(0, 160);
+}
+
+/**
+ * Genera keywords SEO
+ */
+function generarKeywords(producto) {
+  const keywords = [];
+  
+  // Categoría base
+  const categoriaBase = producto.categoria?.replace(/^(Amort|Pastillas|Embragues|Discos y Camp|Rotulas|Brazos Susp)\s+\w+$/, '$1') || '';
+  if (categoriaBase) keywords.push(categoriaBase.toLowerCase());
+  
+  // Posición
+  const posicion = producto.detalles_tecnicos?.["Posición de la pieza"];
+  if (posicion) keywords.push(posicion.toLowerCase());
+  
+  // Aplicaciones
+  if (producto.aplicaciones) {
+    producto.aplicaciones.forEach(app => {
+      keywords.push(app.marca.toLowerCase());
+      keywords.push(app.modelo.toLowerCase());
+      keywords.push(`${app.marca.toLowerCase()} ${app.modelo.toLowerCase()}`);
+    });
+  }
+  
+  // Marca
+  if (producto.marca) keywords.push(producto.marca.toLowerCase());
+  
+  // Código
+  keywords.push(producto.codigo);
+  
+  // Keywords generales
+  keywords.push('repuestos', 'auto', 'repuestos auto', 'autopartes', 'bethersa', 'mendoza');
+  
+  // Equivalencias
+  if (producto.equivalencias) {
+    producto.equivalencias.forEach(eq => {
+      keywords.push(eq.codigo);
+      keywords.push(eq.marca.toLowerCase());
+    });
+  }
+  
+  // Remover duplicados y unir
+  return [...new Set(keywords)].join(', ');
+}
+
+/**
+ * Genera URL amigable
+ */
+function generarURLAmigable(producto) {
+  const categoriaBase = producto.categoria?.replace(/^(Amort|Pastillas|Embragues|Discos y Camp|Rotulas|Brazos Susp)\s+\w+$/, '$1') || '';
+  const posicion = producto.detalles_tecnicos?.["Posición de la pieza"];
+  
+  // Obtener primera aplicación principal
+  const primeraApp = producto.aplicaciones?.[0];
+  
+  const partes = [];
+  
+  if (categoriaBase) partes.push(categoriaBase.toLowerCase());
+  if (posicion) partes.push(posicion.toLowerCase());
+  if (primeraApp) {
+    partes.push(primeraApp.marca.toLowerCase());
+    partes.push(primeraApp.modelo.toLowerCase());
+  }
+  partes.push(producto.codigo);
+  
+  return partes
+    .join('-')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remover acentos
+    .replace(/[^\w-]/g, '')          // Solo letras, números y guiones
+    .replace(/--+/g, '-')            // Múltiples guiones a uno
+    .replace(/^-|-$/g, '');          // Remover guiones al inicio/final
+}
+
+/**
+ * Genera datos estructurados Schema.org
+ */
+function generarDatosEstructurados(producto, nombreDescriptivo, descripcionSEO) {
+  const precioNumerico = parseFloat(
+    (producto.precio_lista_con_iva || '0').replace(/[$.]/g, '').replace(',', '.')
+  ) || 0;
+
+  const datosEstructurados = {
+    "@context": "https://schema.org/",
+    "@type": "Product",
+    "name": nombreDescriptivo,
+    "description": descripcionSEO,
+    "sku": producto.codigo,
+    "mpn": producto.codigo,
+    "brand": {
+      "@type": "Brand",
+      "name": producto.marca || "Bethersa"
+    },
+    "category": producto.categoria,
+    "image": [
+      producto.imagen || "/img/placeholder-producto.webp"
+    ],
+    "offers": {
+      "@type": "Offer",
+      "url": `https://bethersa.com.ar/producto?id=${producto.codigo}`,
+      "priceCurrency": "ARS",
+      "price": precioNumerico,
+      "availability": "https://schema.org/InStock",
+      "seller": {
+        "@type": "Organization",
+        "name": "Bethersa S.A."
+      }
+    }
+  };
+
+  // Si tiene aplicaciones, agregar compatibilidad
+  if (producto.aplicaciones && producto.aplicaciones.length > 0) {
+    datosEstructurados.isCompatibleWith = producto.aplicaciones.map(app => ({
+      "@type": "Vehicle",
+      "brand": app.marca,
+      "model": app.modelo,
+      "productionDate": app.version
+    }));
+  }
+
+  return datosEstructurados;
+}
+
+/**
+ * Procesa un producto agregando todos los campos SEO
+ */
+function procesarProductoConSEO(producto) {
+  const nombreDescriptivo = generarNombreDescriptivo(producto);
+  const tituloSEO = generarTituloSEO(producto);
+  const descripcionSEO = generarDescripcionSEO(producto);
+  const keywords = generarKeywords(producto);
+  const urlAmigable = generarURLAmigable(producto);
+  const datosEstructurados = generarDatosEstructurados(producto, nombreDescriptivo, descripcionSEO);
+
+  return {
+    ...producto,
+    // Campos SEO generados
+    nombre_descriptivo: nombreDescriptivo,
+    titulo_seo: tituloSEO,
+    descripcion_seo: descripcionSEO,
+    keywords_seo: keywords,
+    url_amigable: urlAmigable,
+    datos_estructurados: datosEstructurados
+  };
+}
 
 module.exports = router;
