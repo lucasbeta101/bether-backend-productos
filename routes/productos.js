@@ -449,7 +449,8 @@ router.get('/metadatos', async (req, res) => {
                   tiene_precio_valido: 1,
                   imagen: { $ifNull: ["$imagen", "/img/placeholder-producto.webp"] },
                   aplicaciones: { $slice: ["$aplicaciones", 2] },
-                  "detalles_tecnicos.Posición de la pieza": "$detalles_tecnicos.Posición de la pieza"
+                  "detalles_tecnicos.Posición de la pieza": "$detalles_tecnicos.Posición de la pieza",
+                  stock_status: 1
                 } 
               }
             ],
@@ -504,7 +505,8 @@ router.get('/metadatos', async (req, res) => {
             imagen: 1,
             aplicaciones: 1, // 🔄 TODOS los datos de aplicaciones
             detalles_tecnicos: 1, // 🔄 TODOS los detalles técnicos
-            equivalencias: 1
+            equivalencias: 1,
+            stock_status: 1
           } 
         }
       ];
