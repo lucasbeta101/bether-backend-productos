@@ -632,6 +632,206 @@ router.get('/producto-completo/:codigo', async (req, res) => {
   }
 });
 
+router.post('/busqueda-codigos-lote', async (req, res) => {
+  try {
+    const { codigos } = req.body;
+    
+    if (!codigos || !Array.isArray(codigos) || codigos.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Array de códigos requerido'
+      });
+    }
+
+    // Limpiar y normalizar códigos
+    const codigosLimpios = codigos
+      .filter(codigo => codigo && typeof codigo === 'string')
+      .map(codigo => codigo.toString().trim())
+      .filter(codigo => codigo.length > 0);
+
+    if (codigosLimpios.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        message: 'No hay códigos válidos para buscar'
+      });
+    }
+
+    console.log(`🔍 [BUSQUEDA-LOTE] Buscando ${codigosLimpios.length} productos...`);
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Buscar todos los productos en una sola consulta
+    const startTime = Date.now();
+    
+    const productos = await collection.find(
+      { 
+        codigo: { $in: codigosLimpios },
+        tiene_precio_valido: true 
+      },
+      {
+        projection: {
+          _id: 0,
+          codigo: 1,
+          nombre: 1,
+          categoria: 1,
+          marca: 1,
+          precio_lista_con_iva: 1,
+          aplicaciones: 1,
+          detalles_tecnicos: 1
+        }
+      }
+    ).toArray();
+
+    const processingTime = Date.now() - startTime;
+
+    // Crear mapa de códigos encontrados vs no encontrados
+    const productosEncontrados = productos.map(p => p.codigo);
+    const codigosNoEncontrados = codigosLimpios.filter(codigo => 
+      !productosEncontrados.includes(codigo)
+    );
+
+    console.log(`✅ [BUSQUEDA-LOTE] ${productos.length}/${codigosLimpios.length} productos encontrados en ${processingTime}ms`);
+    
+    if (codigosNoEncontrados.length > 0) {
+      console.log(`⚠️ [BUSQUEDA-LOTE] Códigos no encontrados:`, codigosNoEncontrados.slice(0, 10));
+    }
+
+    res.json({
+      success: true,
+      data: productos,
+      stats: {
+        solicitados: codigosLimpios.length,
+        encontrados: productos.length,
+        noEncontrados: codigosNoEncontrados.length,
+        codigosNoEncontrados: codigosNoEncontrados.slice(0, 20), // Solo primeros 20 para no saturar respuesta
+        processingTime: processingTime
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [BUSQUEDA-LOTE] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// === ENDPOINT ALTERNATIVO PARA VERIFICAR EXISTENCIA RÁPIDA ===
+router.post('/verificar-codigos-existencia', async (req, res) => {
+  try {
+    const { codigos } = req.body;
+    
+    if (!codigos || !Array.isArray(codigos)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Array de códigos requerido'
+      });
+    }
+
+    const codigosLimpios = codigos
+      .map(codigo => codigo.toString().trim())
+      .filter(codigo => codigo.length > 0);
+
+    console.log(`🔍 [VERIFICAR-EXISTENCIA] Verificando ${codigosLimpios.length} códigos...`);
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Solo verificar existencia (más rápido)
+    const productosExistentes = await collection.find(
+      { 
+        codigo: { $in: codigosLimpios },
+        tiene_precio_valido: true 
+      },
+      { projection: { codigo: 1, _id: 0 } }
+    ).toArray();
+
+    const codigosExistentes = productosExistentes.map(p => p.codigo);
+    const codigosNoExistentes = codigosLimpios.filter(codigo => 
+      !codigosExistentes.includes(codigo)
+    );
+
+    res.json({
+      success: true,
+      existentes: codigosExistentes,
+      noExistentes: codigosNoExistentes,
+      stats: {
+        total: codigosLimpios.length,
+        existentes: codigosExistentes.length,
+        noExistentes: codigosNoExistentes.length
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [VERIFICAR-EXISTENCIA] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// === ENDPOINT PARA BUSCAR PRODUCTO INDIVIDUAL (OPTIMIZADO) ===
+router.get('/producto-rapido/:codigo', async (req, res) => {
+  try {
+    const { codigo } = req.params;
+    
+    if (!codigo || codigo.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Código requerido'
+      });
+    }
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const producto = await collection.findOne(
+      { 
+        codigo: codigo.trim(),
+        tiene_precio_valido: true 
+      },
+      {
+        projection: {
+          _id: 0,
+          codigo: 1,
+          nombre: 1,
+          categoria: 1,
+          marca: 1
+        }
+      }
+    );
+
+    if (!producto) {
+      return res.status(404).json({
+        success: false,
+        error: 'Producto no encontrado'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: producto
+    });
+
+  } catch (error) {
+    console.error('❌ [PRODUCTO-RAPIDO] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+
+
 // 🔍 BÚSQUEDA PRINCIPAL
 router.get('/busqueda', async (req, res) => {
   try {
