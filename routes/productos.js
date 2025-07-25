@@ -387,8 +387,8 @@ router.get('/ping', async (req, res) => {
 router.get('/metadatos', async (req, res) => {
   try {
     const { 
-      pagina = null,        // 🔄 CAMBIO: null por defecto
-      limite = null,        // 🔄 CAMBIO: null por defecto 
+      pagina = null,
+      limite = null, 
       categoria = null,
       solo_conteo = false
     } = req.query;
@@ -422,7 +422,6 @@ router.get('/metadatos', async (req, res) => {
       }
     }
 
-    // 🚀 DETERMINAR SI ES PAGINADO O COMPLETO
     const esPaginado = pagina !== null && limite !== null;
     
     console.log(`📦 [METADATOS] Solicitud ${esPaginado ? 'PAGINADA' : 'COMPLETA'}`);
@@ -447,7 +446,16 @@ router.get('/metadatos', async (req, res) => {
                   precio_lista_con_iva: 1,
                   precio_numerico: 1,
                   tiene_precio_valido: 1,
-                  imagen: { $ifNull: ["$imagen", "/img/placeholder-producto.webp"] },
+                  // 🆕 USAR PRIMERA IMAGEN DEL ARRAY
+                  imagen: { 
+                    $cond: {
+                      if: { $isArray: "$imagenes" },
+                      then: { $arrayElemAt: ["$imagenes", 0] },
+                      else: { $ifNull: ["$imagen", "/img/placeholder-producto.webp"] }
+                    }
+                  },
+                  // 🆕 MANTENER ARRAY COMPLETO PARA DETALLES
+                  imagenes: 1,
                   aplicaciones: { $slice: ["$aplicaciones", 2] },
                   "detalles_tecnicos.Posición de la pieza": "$detalles_tecnicos.Posición de la pieza",
                   stock_status: 1
@@ -502,9 +510,18 @@ router.get('/metadatos', async (req, res) => {
             precio_lista_con_iva: 1,
             precio_numerico: 1,
             tiene_precio_valido: 1,
-            imagen: 1,
-            aplicaciones: 1, // 🔄 TODOS los datos de aplicaciones
-            detalles_tecnicos: 1, // 🔄 TODOS los detalles técnicos
+            // 🆕 USAR PRIMERA IMAGEN DEL ARRAY
+            imagen: { 
+              $cond: {
+                if: { $isArray: "$imagenes" },
+                then: { $arrayElemAt: ["$imagenes", 0] },
+                else: { $ifNull: ["$imagen", "/img/placeholder-producto.webp"] }
+              }
+            },
+            // 🆕 MANTENER ARRAY COMPLETO PARA DETALLES
+            imagenes: 1,
+            aplicaciones: 1,
+            detalles_tecnicos: 1,
             equivalencias: 1,
             stock_status: 1
           } 
@@ -517,12 +534,10 @@ router.get('/metadatos', async (req, res) => {
 
       console.log(`🎉 [METADATOS-COMPLETO] ${productos.length} productos cargados en ${processingTime}ms`);
 
-      // 🎯 RESPUESTA COMPATIBLE PERO SIN PAGINACIÓN
       res.json({
         success: true,
         count: productos.length,
         data: productos,
-        // 📊 Info para compatibilidad
         pagination: {
           totalProductos: productos.length,
           cargaCompleta: true
@@ -857,6 +872,19 @@ router.get('/busqueda', async (req, res) => {
     // Construir pipeline
     const pipeline = buildSearchPipeline(parsedQuery, parseInt(limit), parseInt(offset));
     
+    // 🆕 AGREGAR PROYECCIÓN PARA MANEJAR IMÁGENES
+    pipeline.push({
+      $addFields: {
+        imagen: { 
+          $cond: {
+            if: { $isArray: "$imagenes" },
+            then: { $arrayElemAt: ["$imagenes", 0] },
+            else: { $ifNull: ["$imagen", "/img/placeholder-producto.webp"] }
+          }
+        }
+      }
+    });
+    
     // Ejecutar búsqueda
     const startTime = Date.now();
     const results = await collection.aggregate(pipeline).toArray();
@@ -901,6 +929,15 @@ router.get('/producto/:codigo', async (req, res) => {
         success: false,
         error: 'Producto no encontrado'
       });
+    }
+
+    // 🆕 PROCESAR IMÁGENES PARA COMPATIBILIDAD
+    if (producto.imagenes && Array.isArray(producto.imagenes) && producto.imagenes.length > 0) {
+      // Si existe el array de imágenes, usar la primera como imagen principal
+      producto.imagen = producto.imagenes[0];
+    } else if (!producto.imagen) {
+      // Si no hay imagen principal ni array, usar placeholder
+      producto.imagen = "/img/placeholder-producto.webp";
     }
 
     // ✅ PROCESAR PRODUCTO CON DATOS SEO
