@@ -3,7 +3,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const productosRoutes = require('./routes/productos');
-
+const merchantRoutes = require('./routes/merchant'); // 🔧 AGREGAR ESTA LÍNEA
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -79,6 +79,7 @@ Object.entries(busquedasPopulares).forEach(([url, busqueda]) => {
 
 // ===== ROUTES API =====
 app.use('/api', productosRoutes);
+app.use('/api/merchant', merchantRoutes); // 🔧 MOVER ESTA LÍNEA AQUÍ
 
 // ===== HEALTH CHECK =====
 app.get('/', (req, res) => {
