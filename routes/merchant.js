@@ -94,14 +94,14 @@ function transformarProductoMerchant(producto) {
   
     // Determinar disponibilidad
     const mapearDisponibilidad = (stockStatus) => {
-      const stockMap = {
-        'Stock alto': 'in stock',
-        'Stock medio': 'in stock',
-        'Stock bajo': 'limited availability',
-        'Sin stock': 'out of stock'
+        const stockMap = {
+          'Stock alto': 'in_stock',        // ✅ CORREGIDO: guión bajo
+          'Stock medio': 'in_stock',       // ✅ CORREGIDO: guión bajo  
+          'Stock bajo': 'limited_availability', // ✅ CORREGIDO: guión bajo
+          'Sin stock': 'out_of_stock'      // ✅ CORREGIDO: guión bajo
+        };
+        return stockMap[stockStatus] || 'in_stock';
       };
-      return stockMap[stockStatus] || 'in stock';
-    };
   
     // Crear descripción rica
     const crearDescripcion = (producto) => {
@@ -178,7 +178,7 @@ function transformarProductoMerchant(producto) {
       }
     };
   }
-  
+
 // ===== ENDPOINTS =====
 
 // 🔧 TEST: Verificar configuración
