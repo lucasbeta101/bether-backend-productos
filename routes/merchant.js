@@ -516,5 +516,80 @@ router.get('/sync-status', async (req, res) => {
     });
   }
 });
-
+router.get('/upload-product-test/:codigo', async (req, res) => {
+    try {
+      const { codigo } = req.params;
+      
+      console.log(`🧪 [DEBUG] Intentando subir producto ${codigo}...`);
+      
+      const client = await connectToMongoDB();
+      const db = client.db(DB_NAME);
+      const collection = db.collection(COLLECTION_NAME);
+      
+      const producto = await collection.findOne({ codigo: codigo });
+      
+      if (!producto) {
+        return res.status(404).json({ error: 'Producto no encontrado' });
+      }
+      
+      console.log(`✅ [DEBUG] Producto encontrado: ${producto.nombre}`);
+      
+      // Transformar producto
+      const productoTransformado = transformarProductoMerchant(producto);
+      console.log(`✅ [DEBUG] Producto transformado`);
+      
+      // Intentar conectar con Google
+      try {
+        const content = await initGoogleMerchant();
+        console.log(`✅ [DEBUG] Conexión Google establecida`);
+        
+        // Intentar subir
+        const request = {
+          merchantId: GOOGLE_MERCHANT_ID,
+          requestBody: productoTransformado
+        };
+        
+        console.log(`📤 [DEBUG] Enviando a Google Merchant...`);
+        console.log(`📤 [DEBUG] Merchant ID: ${GOOGLE_MERCHANT_ID}`);
+        
+        const response = await content.products.insert(request);
+        
+        console.log(`✅ [DEBUG] Respuesta de Google:`, response.data);
+        
+        res.json({
+          success: true,
+          productId: codigo,
+          debug: {
+            merchantId: GOOGLE_MERCHANT_ID,
+            transformedProduct: productoTransformado,
+            googleResponse: response.data
+          }
+        });
+        
+      } catch (googleError) {
+        console.error(`❌ [DEBUG] Error de Google:`, googleError);
+        
+        res.json({
+          success: false,
+          error: 'Error de Google API',
+          debug: {
+            googleError: googleError.message,
+            googleDetails: googleError.response?.data || 'Sin detalles',
+            merchantId: GOOGLE_MERCHANT_ID,
+            transformedProduct: productoTransformado
+          }
+        });
+      }
+      
+    } catch (error) {
+      console.error(`❌ [DEBUG] Error general:`, error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        debug: {
+          stack: error.stack
+        }
+      });
+    }
+  });
 module.exports = router;
