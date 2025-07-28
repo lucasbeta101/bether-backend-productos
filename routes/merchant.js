@@ -93,7 +93,7 @@ function transformarProductoMerchant(producto) {
     };
   
     // Determinar disponibilidad
-    const mapearDisponibilidadAvanzado = (stockStatus) => {
+    const mapearDisponibilidad = (stockStatus) => {
         const stockMap = {
           'Stock alto': 'in_stock',        // ✅ En stock - disponible inmediatamente
           'Stock medio': 'in_stock',       // ✅ En stock - disponible inmediatamente  
