@@ -52,6 +52,33 @@ async function initGoogleMerchant() {
 
 // ===== TRANSFORMAR PRODUCTO A FORMATO GOOGLE MERCHANT =====
 // Reemplazar la función transformarProductoMerchant en routes/merchant.js
+function formatearTitulo(texto) {
+    if (!texto) return '';
+    
+    return texto
+      .toLowerCase()
+      .split(' ')
+      .map(palabra => {
+        // Lista de palabras que deben permanecer en minúsculas
+        const palabrasMinusculas = ['de', 'del', 'la', 'el', 'los', 'las', 'y', 'para', 'con', 'sin', 'un', 'una'];
+        
+        // Si es la primera palabra o no está en la lista, capitalizar
+        if (palabra.length === 0) return palabra;
+        
+        if (palabrasMinusculas.includes(palabra)) {
+          return palabra;
+        }
+        
+        return palabra.charAt(0).toUpperCase() + palabra.slice(1);
+      })
+      .join(' ')
+      // Capitalizar después de puntos, guiones, paréntesis
+      .replace(/([.()-])\s*([a-z])/g, (match, punct, letter) => {
+        return punct + (match.includes(' ') ? ' ' : '') + letter.toUpperCase();
+      })
+      // Asegurar que la primera palabra siempre esté capitalizada
+      .replace(/^[a-z]/, letter => letter.toUpperCase());
+  }
 
 function transformarProductoMerchant(producto) {
     // Extraer marca del nombre del producto
@@ -128,10 +155,12 @@ function transformarProductoMerchant(producto) {
     const marca = extraerMarca(producto.nombre);
     const precio = parseFloat(producto.precio_numerico) || 0;
     
-    // ✅ FORMATO CORRECTO para Google Merchant API
+    // ✅ APLICAR FORMATO DE TÍTULO
+    const tituloFormateado = formatearTitulo(producto.nombre);
+    
     return {
       offerId: producto.codigo,
-      title: producto.nombre.substring(0, 150),
+      title: tituloFormateado.substring(0, 150), // ✅ USAR TÍTULO FORMATEADO
       description: crearDescripcion(producto),
       link: `https://bethersa.com.ar/producto?id=${producto.codigo}`,
       imageLink: producto.imagenes?.[0] || 'https://bethersa.com.ar/img/placeholder-producto.webp',
@@ -141,17 +170,15 @@ function transformarProductoMerchant(producto) {
       availability: mapearDisponibilidad(producto.stock_status),
       condition: 'new',
       googleProductCategory: categorizarProducto(producto.categoria).toString(),
-      // ❌ QUITAR productType - Google no lo acepta
       brand: marca,
       mpn: producto.codigo,
       price: {
         value: precio.toString(),
         currency: 'ARS'
       }
-      // ❌ QUITAR customAttributes - Google no los acepta en este formato
     };
   }
-
+  
 // ===== ENDPOINTS =====
 
 // 🔧 TEST: Verificar configuración
