@@ -93,13 +93,16 @@ function transformarProductoMerchant(producto) {
     };
   
     // Determinar disponibilidad
-    const mapearDisponibilidad = (stockStatus) => {
+    const mapearDisponibilidadAvanzado = (stockStatus) => {
         const stockMap = {
-          'Stock alto': 'in_stock',        // ✅ CORREGIDO: guión bajo
-          'Stock medio': 'in_stock',       // ✅ CORREGIDO: guión bajo  
-          'Stock bajo': 'limited_availability', // ✅ CORREGIDO: guión bajo
-          'Sin stock': 'out_of_stock'      // ✅ CORREGIDO: guión bajo
+          'Stock alto': 'in_stock',        // ✅ En stock - disponible inmediatamente
+          'Stock medio': 'in_stock',       // ✅ En stock - disponible inmediatamente  
+          'Stock bajo': 'backorder',       // ✅ Bajo pedido - acepta pedidos pero demora
+          'Sin stock': 'out_of_stock',     // ✅ Agotado - no acepta pedidos
+          'Agotado': 'out_of_stock',       
+          'No disponible': 'out_of_stock'
         };
+        
         return stockMap[stockStatus] || 'in_stock';
       };
   
