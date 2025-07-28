@@ -51,115 +51,106 @@ async function initGoogleMerchant() {
 }
 
 // ===== TRANSFORMAR PRODUCTO A FORMATO GOOGLE MERCHANT =====
+// Reemplazar la función transformarProductoMerchant en routes/merchant.js
+
 function transformarProductoMerchant(producto) {
-  // Extraer marca del nombre del producto
-  const extraerMarca = (nombre) => {
-    const marcas = ['VALEO', 'CORVEN', 'SADAR', 'FERODO', 'JURID', 'LIP', 'SUPER PICKUP'];
-    for (const marca of marcas) {
-      if (nombre.toUpperCase().includes(marca)) {
-        return marca;
+    // Extraer marca del nombre del producto
+    const extraerMarca = (nombre) => {
+      const marcas = ['VALEO', 'CORVEN', 'SADAR', 'FERODO', 'JURID', 'LIP', 'SUPER PICKUP'];
+      for (const marca of marcas) {
+        if (nombre.toUpperCase().includes(marca)) {
+          return marca;
+        }
       }
-    }
-    return producto.marca || 'BETHERSA';
-  };
-
-  // Determinar disponibilidad
-  const mapearDisponibilidad = (stockStatus) => {
-    const stockMap = {
-      'Stock alto': 'in stock',
-      'Stock medio': 'in stock',
-      'Stock bajo': 'limited availability',
-      'Sin stock': 'out of stock'
+      return producto.marca || 'BETHERSA';
     };
-    return stockMap[stockStatus] || 'in stock';
-  };
-
-  // Crear descripción rica
-  const crearDescripcion = (producto) => {
-    let descripcion = producto.nombre;
-    
-    // Agregar detalles técnicos
-    if (producto.detalles_tecnicos) {
-      const detalles = Object.entries(producto.detalles_tecnicos)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(' | ');
-      descripcion += `\n\nEspecificaciones: ${detalles}`;
-    }
-    
-    // Agregar aplicaciones (primeras 5)
-    if (producto.aplicaciones && producto.aplicaciones.length > 0) {
-      const aplicaciones = producto.aplicaciones
-        .slice(0, 5)
-        .map(app => `${app.marca} ${app.modelo} ${app.version || ''}`.trim())
-        .join(', ');
-      descripcion += `\n\nCompatible con: ${aplicaciones}`;
-    }
-    
-    // Agregar equivalencias
-    if (producto.equivalencias && producto.equivalencias.length > 0) {
-      const equivalencias = producto.equivalencias
-        .map(eq => `${eq.marca}: ${eq.codigo}`)
-        .join(', ');
-      descripcion += `\n\nEquivalencias: ${equivalencias}`;
-    }
-    
-    return descripcion.substring(0, 5000); // Google limit
-  };
-
-  // Categorizar producto
-  const categorizarProducto = (categoria) => {
-    const categoriaMap = {
-      'Amort': 'Vehicle Parts & Accessories > Motor Vehicle Parts > Motor Vehicle Suspension Parts > Motor Vehicle Shock Absorbers',
-      'Pastillas': 'Vehicle Parts & Accessories > Motor Vehicle Parts > Motor Vehicle Brake Parts > Motor Vehicle Brake Pads',
-      'Embragues': 'Vehicle Parts & Accessories > Motor Vehicle Parts > Motor Vehicle Transmission Parts > Motor Vehicle Clutches',
-      'Discos y Camp': 'Vehicle Parts & Accessories > Motor Vehicle Parts > Motor Vehicle Brake Parts > Motor Vehicle Brake Rotors',
-      'Rotulas': 'Vehicle Parts & Accessories > Motor Vehicle Parts > Motor Vehicle Suspension Parts',
-      'Brazos Susp': 'Vehicle Parts & Accessories > Motor Vehicle Parts > Motor Vehicle Suspension Parts'
-    };
-    
-    for (const [key, value] of Object.entries(categoriaMap)) {
-      if (categoria.includes(key)) {
-        return value;
-      }
-    }
-    return 'Vehicle Parts & Accessories > Motor Vehicle Parts';
-  };
-
-  const marca = extraerMarca(producto.nombre);
-  const precio = parseFloat(producto.precio_numerico) || 0;
   
-  return {
-    offerId: producto.codigo,
-    title: producto.nombre.substring(0, 150), // Google limit
-    description: crearDescripcion(producto),
-    link: `https://bethersa.com.ar/producto?id=${producto.codigo}`,
-    imageLink: producto.imagenes?.[0] || 'https://bethersa.com.ar/img/placeholder-producto.webp',
-    contentLanguage: 'es',
-    targetCountry: 'AR',
-    channel: 'online',
-    availability: mapearDisponibilidad(producto.stock_status),
-    condition: 'new',
-    googleProductCategory: categorizarProducto(producto.categoria),
-    productType: producto.categoria,
-    brand: marca,
-    mpn: producto.codigo,
-    price: {
-      value: precio.toString(),
-      currency: 'ARS'
-    },
-    gtin: undefined, // No tenemos códigos de barras
-    customAttributes: [
-      {
-        name: 'posicion',
-        value: producto.detalles_tecnicos?.["Posición de la pieza"] || 'No especificada'
-      },
-      {
-        name: 'aplicaciones_count',
-        value: producto.cantidad_aplicaciones?.toString() || '0'
+    // Determinar disponibilidad
+    const mapearDisponibilidad = (stockStatus) => {
+      const stockMap = {
+        'Stock alto': 'in stock',
+        'Stock medio': 'in stock',
+        'Stock bajo': 'limited availability',
+        'Sin stock': 'out of stock'
+      };
+      return stockMap[stockStatus] || 'in stock';
+    };
+  
+    // Crear descripción rica
+    const crearDescripcion = (producto) => {
+      let descripcion = producto.nombre;
+      
+      // Agregar detalles técnicos
+      if (producto.detalles_tecnicos) {
+        const detalles = Object.entries(producto.detalles_tecnicos)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join(' | ');
+        descripcion += `\n\nEspecificaciones: ${detalles}`;
       }
-    ]
-  };
-}
+      
+      // Agregar aplicaciones (primeras 5)
+      if (producto.aplicaciones && producto.aplicaciones.length > 0) {
+        const aplicaciones = producto.aplicaciones
+          .slice(0, 5)
+          .map(app => `${app.marca} ${app.modelo} ${app.version || ''}`.trim())
+          .join(', ');
+        descripcion += `\n\nCompatible con: ${aplicaciones}`;
+      }
+      
+      // Agregar equivalencias
+      if (producto.equivalencias && producto.equivalencias.length > 0) {
+        const equivalencias = producto.equivalencias
+          .map(eq => `${eq.marca}: ${eq.codigo}`)
+          .join(', ');
+        descripcion += `\n\nEquivalencias: ${equivalencias}`;
+      }
+      
+      return descripcion.substring(0, 5000); // Google limit
+    };
+  
+    // Categorizar producto según taxonomía de Google
+    const categorizarProducto = (categoria) => {
+      if (categoria.includes('Amort')) {
+        return 632; // Vehicle Shock Absorbers
+      }
+      if (categoria.includes('Pastillas')) {
+        return 5613; // Vehicle Brake Pads  
+      }
+      if (categoria.includes('Embragues')) {
+        return 5612; // Vehicle Clutches
+      }
+      if (categoria.includes('Discos')) {
+        return 5614; // Vehicle Brake Rotors
+      }
+      return 888; // Vehicle Parts & Accessories (general)
+    };
+  
+    const marca = extraerMarca(producto.nombre);
+    const precio = parseFloat(producto.precio_numerico) || 0;
+    
+    // ✅ FORMATO CORRECTO para Google Merchant API
+    return {
+      offerId: producto.codigo,
+      title: producto.nombre.substring(0, 150),
+      description: crearDescripcion(producto),
+      link: `https://bethersa.com.ar/producto?id=${producto.codigo}`,
+      imageLink: producto.imagenes?.[0] || 'https://bethersa.com.ar/img/placeholder-producto.webp',
+      contentLanguage: 'es',
+      targetCountry: 'AR',
+      channel: 'online',
+      availability: mapearDisponibilidad(producto.stock_status),
+      condition: 'new',
+      googleProductCategory: categorizarProducto(producto.categoria).toString(),
+      // ❌ QUITAR productType - Google no lo acepta
+      brand: marca,
+      mpn: producto.codigo,
+      price: {
+        value: precio.toString(),
+        currency: 'ARS'
+      }
+      // ❌ QUITAR customAttributes - Google no los acepta en este formato
+    };
+  }
 
 // ===== ENDPOINTS =====
 
