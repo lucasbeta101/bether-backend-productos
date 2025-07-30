@@ -2362,19 +2362,38 @@ function generarDatosEstructurados(producto, nombreDescriptivo, descripcionSEO) 
       "availability": "https://schema.org/InStock",
       "seller": {
         "@type": "Organization",
-        "name": "Bethersa S.A."
+        "name": "Bethersa S.A.",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Mendoza",
+          "addressCountry": "AR"
+        }
       }
     }
   };
 
-  // ✅ AGREGAR CAMPO "name" OBLIGATORIO PARA VEHÍCULOS
+  // ✅ AGREGAR VEHÍCULOS CON CAMPO "name" Y "offers" OBLIGATORIOS
   if (producto.aplicaciones && producto.aplicaciones.length > 0) {
     datosEstructurados.isCompatibleWith = producto.aplicaciones.map(app => ({
       "@type": "Vehicle",
       "name": `${app.marca} ${app.modelo}${app.version && app.version !== 'SIN ESPECIFICAR' ? ` ${app.version}` : ''}`,
       "brand": app.marca,
       "model": app.modelo,
-      "productionDate": app.version
+      "productionDate": app.version,
+      "offers": {
+        "@type": "Offer",
+        "availability": "https://schema.org/InStock",
+        "description": "Repuesto disponible en Mendoza",
+        "seller": {
+          "@type": "Organization",
+          "name": "Bethersa S.A.",
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Mendoza",
+            "addressCountry": "AR"
+          }
+        }
+      }
     }));
   }
 
