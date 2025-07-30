@@ -2367,10 +2367,11 @@ function generarDatosEstructurados(producto, nombreDescriptivo, descripcionSEO) 
     }
   };
 
-  // Si tiene aplicaciones, agregar compatibilidad
+  // ✅ AGREGAR CAMPO "name" OBLIGATORIO PARA VEHÍCULOS
   if (producto.aplicaciones && producto.aplicaciones.length > 0) {
     datosEstructurados.isCompatibleWith = producto.aplicaciones.map(app => ({
       "@type": "Vehicle",
+      "name": `${app.marca} ${app.modelo}${app.version && app.version !== 'SIN ESPECIFICAR' ? ` ${app.version}` : ''}`,
       "brand": app.marca,
       "model": app.modelo,
       "productionDate": app.version
