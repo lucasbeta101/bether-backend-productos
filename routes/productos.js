@@ -2380,6 +2380,7 @@ function generarDatosEstructurados(producto, nombreDescriptivo, descripcionSEO) 
       "brand": app.marca,
       "model": app.modelo,
       "productionDate": app.version,
+      "image": producto.imagen || "/img/placeholder-producto.webp",  // ✅ NUEVO: Campo imagen
       "offers": {
         "@type": "Offer",
         "price": precioNumerico,
