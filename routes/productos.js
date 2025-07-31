@@ -2372,7 +2372,7 @@ function generarDatosEstructurados(producto, nombreDescriptivo, descripcionSEO) 
     }
   };
 
-  // ✅ AGREGAR VEHÍCULOS CON CAMPO "name" Y "offers" OBLIGATORIOS
+  // ✅ VEHÍCULOS CON PRECIO INCLUIDO EN OFFERS
   if (producto.aplicaciones && producto.aplicaciones.length > 0) {
     datosEstructurados.isCompatibleWith = producto.aplicaciones.map(app => ({
       "@type": "Vehicle",
@@ -2382,8 +2382,11 @@ function generarDatosEstructurados(producto, nombreDescriptivo, descripcionSEO) 
       "productionDate": app.version,
       "offers": {
         "@type": "Offer",
+        "price": precioNumerico,
+        "priceCurrency": "ARS",
         "availability": "https://schema.org/InStock",
         "description": "Repuesto disponible en Mendoza",
+        "url": `https://bethersa.com.ar/producto?id=${producto.codigo}`,
         "seller": {
           "@type": "Organization",
           "name": "Bethersa S.A.",
