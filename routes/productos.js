@@ -2146,8 +2146,13 @@ router.get('/generar-slug/:codigo', async (req, res) => {
 });
 function generarNombreDescriptivo(producto) {
   // ✅ EXCEPCIÓN PARA MARROSE CON CTR O FTE
-  if (producto.proveedor === 'Marrose' && (producto.categoria === 'CTR' || producto.categoria === 'FTE')) {
-    // Para esta excepción, devolver el nombre original sin formatear
+  if ((producto.categoria === 'CTR' || producto.categoria === 'FTE') && 
+      producto.proveedor === 'Corven') {
+    return producto.nombre || '';
+  }
+  
+  // ✅ EXCEPCIÓN 2: Productos de Marrose (cualquier categoría)
+  if (producto.proveedor === 'Marrose') {
     return producto.nombre || '';
   }
   
