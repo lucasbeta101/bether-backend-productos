@@ -119,7 +119,7 @@ const CATEGORIAS = {
     "CUERPO VALVULA"
   ],
   "Purgares y Depósitos": [
-    "PURGADOR",
+    "PURGADORES",
     "DEPOSITO LIQUIDO"
   ],
   "Bombas de vacío": [
@@ -129,7 +129,7 @@ const CATEGORIAS = {
     "GUARDAPOLVO RUEDA",
     "GUARDAPOLVO BOMBIN",
     "GUARDAPOLVO FUELLE",
-    "SELLO"
+    "SELLOS"
   ],
   "Varios": [
     "VARIOS"
