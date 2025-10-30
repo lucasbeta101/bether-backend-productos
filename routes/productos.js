@@ -118,7 +118,7 @@ const CATEGORIAS = {
     "ASIENTO VALVULA",
     "CUERPO VALVULA"
   ],
-  "Purgares y Depósitos": [
+  "Purga y Depósitos": [
     "PURGADORES",
     "DEPOSITO LIQUIDO"
   ],
