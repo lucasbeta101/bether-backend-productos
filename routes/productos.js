@@ -45,6 +45,7 @@ router.use((req, res, next) => {
 });
 
 const CATEGORIAS = {
+  // --- CATEGORÍAS EXISTENTES (NO MODIFICADAS) ---
   "Amortiguadores": [
     "Amort CORVEN", "Amort SADAR", "Amort SUPER PICKUP",
     "Amort LIP", "Amort PRO TUNNING"
@@ -70,7 +71,72 @@ const CATEGORIAS = {
   "CTR": ["CTR"],
   "FTE": ["FTE"],
   "Gas Spring Stabilus": ["Gas Spring Stabilus"],
-  "Otros": ["Otros"]
+  "Otros": ["Otros"],
+
+  // --- NUEVAS CATEGORÍAS AGREGADAS ---
+  "Cilindros de Rueda y Componentes": [
+    "CILINDRO RUEDA",
+    "PISTON CILINDRO RUEDA",
+    "CUBETA CILINDRO RUEDA",
+    "GUARDAPOLVO CILINDRO RUEDA (1)"
+  ],
+  "Bombas de Freno": [
+    "BOMBA FRENO",
+    "CUBETA PRIMARIA BOMBA FRENO",
+    "CUBETA SECUNDARIA BOMBA FRENO",
+    "Kit Reparación BOMBA FRENO"
+  ],
+  "Bombas de Embrague": [
+    "BOMBA EMBRAGUE",
+    "Kit Reparación BOMBA EMBRAGUE"
+  ],
+  "Bombines de Embrague": [
+    "BOMBIN EMBRAGUE",
+    "Kit Reparación BOMBIN EMBRAGUE"
+  ],
+  "Mordazas y Pistones": [
+    "PISTON MORDAZA",
+    "KIT MORDAZA",
+    "Kit Reparación MORDAZA",
+    "PISTON AUTORREGULABLE"
+  ],
+  "Kits de Reparación Generales": [
+    "Kit Reparación Cilindro",
+    "Kit Reparación Servo Freno",
+    "KIT PERNOS",
+    "KIT BUJES"
+  ],
+  "Flexibles de Freno": [
+    "FLEXIBLE"
+  ],
+  "Válvulas Hidráulicas": [
+    "VALVULA LIMITADORA",
+    "VALVULA RETENCION",
+    "VALVULA EQUALIZADORA",
+    "VALVULA CONTROL",
+    "VALVULA VACIO",
+    "ASIENTO VALVULA",
+    "CUERPO VALVULA"
+  ],
+  "Purgares y Depósitos": [
+    "PURGADOR",
+    "DEPOSITO LIQUIDO"
+  ],
+  "Bombas de vacío": [
+    "BOMBA VACIO"
+  ],
+  "Guardapolvos y Sellos": [
+    "GUARDAPOLVO RUEDA",
+    "GUARDAPOLVO BOMBIN",
+    "GUARDAPOLVO FUELLE",
+    "SELLO"
+  ],
+  "Varios": [
+    "VARIOS"
+  ],
+  "Pistones Servo Freno": [
+    "PISTON SERVOFRENO"
+  ]
 };
 
 
@@ -93,7 +159,23 @@ function getValidCategoriesForProduct(product) {
       'brazo': ['Brazos Susp CORVEN', 'Brazos Susp SADAR'],
       'extremo': ['Extremos CORVEN', 'Extremos SADAR'],
       'axial': ['Axiales CORVEN', 'Axiales SADAR'],
-      'homocinetica': ['Homocinéticas CORVEN', 'Homocinéticas SADAR']
+      'homocinetica': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
+      'cilindro': ['Cilindros de Rueda y Componentes'],
+      'piston': ['Cilindros de Rueda y Componentes', 'Mordazas y Pistones', 'Pistones Servo Freno'],
+      'bomba': ['Bombas de Freno', 'Bombas de Embrague', 'Bombas de vacío'],
+      'cubeta': ['Cilindros de Rueda y Componentes', 'Bombas de Freno'],
+      'guardapolvo': ['Cilindros de Rueda y Componentes', 'Guardapolvos y Sellos'],
+      'bombin': ['Bombines de Embrague'],
+      'mordaza': ['Mordazas y Pistones'],
+      'kit': ['Kits de Reparación Generales', 'Mordazas y Pistones', 'Bombas de Freno', 'Bombas de Embrague', 'Bombines de Embrague'],
+      'flexible': ['Flexibles de Freno'],
+      'valvula': ['Válvulas Hidráulicas'],
+      'asiento': ['Válvulas Hidráulicas'],
+      'cuerpo': ['Válvulas Hidráulicas'],
+      'purgador': ['Purga y Depósitos'],
+      'deposito': ['Purga y Depósitos'],
+      'servo': ['Pistones Servo Freno', 'Kits de Reparación Generales'],
+      'sello': ['Guardapolvos y Sellos']
   };
   const normalizedProduct = normalizeText(product).replace(/s$/, '');
   return categoryMap[normalizedProduct] || [];
@@ -114,7 +196,8 @@ function parseNaturalQuery(query) {
   console.log('🧐 [PARSER] Analizando:', query);
   
   const STOP_WORDS = ['para', 'de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'con', 'mi', 'auto'];
-  const productKeywords = ['amortiguador', 'pastilla', 'freno', 'disco', 'cazoleta', 'bieleta', 'rotula', 'embrague', 'brazo', 'extremo', 'axial', 'homocinetica'];
+  const productKeywords = ['amortiguador', 'pastilla', 'freno', 'disco', 'cazoleta', 'bieleta', 'rotula', 'embrague', 'brazo', 'extremo', 'axial', 'homocinetica',
+    'cilindro', 'piston', 'bomba', 'cubeta', 'guardapolvo', 'bombin', 'mordaza', 'kit', 'flexible', 'valvula', 'asiento', 'cuerpo', 'purgador', 'deposito', 'servo', 'sello'];
   const positionKeywords = ['delantero', 'trasero', 'izquierdo', 'derecho', 'del', 'pos', 'izq', 'der'];
   
   // 🆕 DETECCIÓN DE FILTROS FORMATEADOS
