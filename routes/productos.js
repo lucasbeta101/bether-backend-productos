@@ -2145,6 +2145,12 @@ router.get('/generar-slug/:codigo', async (req, res) => {
   }
 });
 function generarNombreDescriptivo(producto) {
+  // ✅ EXCEPCIÓN PARA MARROSE CON CTR O FTE
+  if (producto.proveedor === 'Marrose' && (producto.categoria === 'CTR' || producto.categoria === 'FTE')) {
+    // Para esta excepción, devolver el nombre original sin formatear
+    return producto.nombre || '';
+  }
+  
   // Extraer categoría base (sin marca)
   const categoriaBase = producto.categoria?.replace(/^(Amort|Pastillas|Embragues|Discos y Camp|Rotulas|Brazos Susp)\s+\w+$/, '$1') || '';
   
