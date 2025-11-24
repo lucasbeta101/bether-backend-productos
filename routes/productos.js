@@ -136,6 +136,42 @@ const CATEGORIAS = {
   ],
   "Pistones Servo Freno": [
     "PISTON SERVOFRENO"
+  ],
+  "Parrillas Suspensión": [
+    "Parrilla suspensión"
+  ],
+  "Cremalleras": [
+    "Cremallera"
+  ],
+  "Amortiguadores Yokomitsu": [
+    "Amortiguadores"
+  ],
+  "Extremos Yokomitsu": [
+    "Extremos"
+  ],
+  "Bombas Hidráulicas": [
+    "Bomba hidraulica"
+  ],
+  "Bieletas Yokomitsu": [
+    "Bieleta"
+  ],
+  "Axiales Yokomitsu": [
+    "Axialprecap"
+  ],
+  "Rótulas Yokomitsu": [
+    "Rotula"
+  ],
+  "Homocínéticas Yokomitsu": [
+    "Homocinética"
+  ],
+  "Semiejes Yokomitsu": [
+    "Semieje"
+  ],
+  "Mazas de Rueda": [
+    "Maza de Rueda"
+  ],
+  "Depósitos": [
+    "Depósito de Agua"
   ]
 };
 
@@ -148,39 +184,42 @@ function normalizeText(text) {
 
 function getValidCategoriesForProduct(product) {
   const categoryMap = {
-      'amortiguador': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING'],
-      'pastilla': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
-      'freno': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C', 'Discos y Camp CORVEN', 'Discos y Camp HF'],
-      'disco': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
-      'cazoleta': ['Cazoletas CORVEN', 'Cazoletas SADAR'],
-      'bieleta': ['Bieletas CORVEN', 'Bieletas SADAR'],
-      'rotula': ['Rotulas CORVEN', 'Rotulas SADAR'],
-      'embrague': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
-      'brazo': ['Brazos Susp CORVEN', 'Brazos Susp SADAR'],
-      'extremo': ['Extremos CORVEN', 'Extremos SADAR'],
-      'axial': ['Axiales CORVEN', 'Axiales SADAR'],
-      'homocinetica': ['Homocinéticas CORVEN', 'Homocinéticas SADAR'],
-      'cilindro': ['Cilindros de Rueda y Componentes'],
-      'piston': ['Cilindros de Rueda y Componentes', 'Mordazas y Pistones', 'Pistones Servo Freno'],
-      'bomba': ['Bombas de Freno', 'Bombas de Embrague', 'Bombas de vacío'],
-      'cubeta': ['Cilindros de Rueda y Componentes', 'Bombas de Freno'],
-      'guardapolvo': ['Cilindros de Rueda y Componentes', 'Guardapolvos y Sellos'],
-      'bombin': ['Bombines de Embrague'],
-      'mordaza': ['Mordazas y Pistones'],
-      'kit': ['Kits de Reparación Generales', 'Mordazas y Pistones', 'Bombas de Freno', 'Bombas de Embrague', 'Bombines de Embrague'],
-      'flexible': ['Flexibles de Freno'],
-      'valvula': ['Válvulas Hidráulicas'],
-      'asiento': ['Válvulas Hidráulicas'],
-      'cuerpo': ['Válvulas Hidráulicas'],
-      'purgador': ['Purga y Depósitos'],
-      'deposito': ['Purga y Depósitos'],
-      'servo': ['Pistones Servo Freno', 'Kits de Reparación Generales'],
-      'sello': ['Guardapolvos y Sellos']
+    'amortiguador': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING', 'Amortiguadores'],
+    'pastilla': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+    'freno': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C', 'Discos y Camp CORVEN', 'Discos y Camp HF'],
+    'disco': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
+    'cazoleta': ['Cazoletas CORVEN', 'Cazoletas SADAR'],
+    'bieleta': ['Bieletas CORVEN', 'Bieletas SADAR', 'Bieleta'],
+    'rotula': ['Rotulas CORVEN', 'Rotulas SADAR', 'Rotula'],
+    'embrague': ['Embragues CORVEN', 'Embragues SADAR', 'Embragues VALEO'],
+    'brazo': ['Brazos Susp CORVEN', 'Brazos Susp SADAR'],
+    'extremo': ['Extremos CORVEN', 'Extremos SADAR', 'Extremos'],
+    'axial': ['Axiales CORVEN', 'Axiales SADAR', 'Axialprecap'],
+    'homocinetica': ['Homocínéticas CORVEN', 'Homocínéticas SADAR', 'Homocinética'],
+    'parrilla': ['Parrillas CORVEN', 'Parrillas SADAR', 'Parrilla suspensión'],
+    'cremallera': ['Cremallera'],
+    'cilindro': ['Cilindros de Rueda y Componentes'],
+    'piston': ['Cilindros de Rueda y Componentes', 'Mordazas y Pistones', 'Pistones Servo Freno'],
+    'bomba': ['Bombas de Freno', 'Bombas de Embrague', 'Bombas de vacío', 'Bomba hidraulica'],
+    'cubeta': ['Cilindros de Rueda y Componentes', 'Bombas de Freno'],
+    'guardapolvo': ['Cilindros de Rueda y Componentes', 'Guardapolvos y Sellos'],
+    'bombin': ['Bombines de Embrague'],
+    'mordaza': ['Mordazas y Pistones'],
+    'kit': ['Kits de Reparación Generales', 'Mordazas y Pistones', 'Bombas de Freno', 'Bombas de Embrague', 'Bombines de Embrague'],
+    'flexible': ['Flexibles de Freno'],
+    'valvula': ['Válvulas Hidráulicas'],
+    'asiento': ['Válvulas Hidráulicas'],
+    'cuerpo': ['Válvulas Hidráulicas'],
+    'purgador': ['Purga y Depósitos'],
+    'deposito': ['Purga y Depósitos', 'Depósito de Agua'],
+    'servo': ['Pistones Servo Freno', 'Kits de Reparación Generales'],
+    'sello': ['Guardapolvos y Sellos'],
+    'maza': ['Mazas CORVEN', 'Mazas HF', 'Maza de Rueda'],
+    'semieje': ['Semiejes CORVEN', 'Semieje']
   };
   const normalizedProduct = normalizeText(product).replace(/s$/, '');
   return categoryMap[normalizedProduct] || [];
 }
-
 function mapPositionForSearch(position) {
   const positionMap = {
       'delantero': 'Delantero', 'del': 'Delantero',
@@ -196,8 +235,14 @@ function parseNaturalQuery(query) {
   console.log('🧐 [PARSER] Analizando:', query);
   
   const STOP_WORDS = ['para', 'de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'con', 'mi', 'auto'];
-  const productKeywords = ['amortiguador', 'pastilla', 'freno', 'disco', 'cazoleta', 'bieleta', 'rotula', 'embrague', 'brazo', 'extremo', 'axial', 'homocinetica',
-    'cilindro', 'piston', 'bomba', 'cubeta', 'guardapolvo', 'bombin', 'mordaza', 'kit', 'flexible', 'valvula', 'asiento', 'cuerpo', 'purgador', 'deposito', 'servo', 'sello'];
+  const productKeywords = [
+    'amortiguador', 'pastilla', 'freno', 'disco', 'cazoleta', 'bieleta', 
+    'rotula', 'embrague', 'brazo', 'extremo', 'axial', 'homocinetica',
+    'cilindro', 'piston', 'bomba', 'cubeta', 'guardapolvo', 'bombin', 
+    'mordaza', 'kit', 'flexible', 'valvula', 'asiento', 'cuerpo', 
+    'purgador', 'deposito', 'servo', 'sello',
+    'parrilla', 'cremallera', 'maza', 'semieje'  // ← Nuevas palabras clave
+  ];
   const positionKeywords = ['delantero', 'trasero', 'izquierdo', 'derecho', 'del', 'pos', 'izq', 'der'];
   
   // 🆕 DETECCIÓN DE FILTROS FORMATEADOS
@@ -2155,6 +2200,12 @@ function generarNombreDescriptivo(producto) {
   if (producto.proveedor === 'Marrose') {
     return producto.nombre || '';
   }
+  
+  // ✅ EXCEPCIÓN 3: Productos de Yokomitsu (cualquier categoría)
+  if (producto.proveedor === 'Yokomitsu') {
+    return producto.nombre || '';
+  }
+
   
   // Extraer categoría base (sin marca)
   const categoriaBase = producto.categoria?.replace(/^(Amort|Pastillas|Embragues|Discos y Camp|Rotulas|Brazos Susp)\s+\w+$/, '$1') || '';
