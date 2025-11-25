@@ -137,42 +137,18 @@ const CATEGORIAS = {
   "Pistones Servo Freno": [
     "PISTON SERVOFRENO"
   ],
-  "Parrillas Suspensión": [
-    "Parrilla suspensión"
-  ],
-  "Cremalleras": [
-    "Cremallera"
-  ],
-  "Amortiguadores Yokomitsu": [
-    "Amortiguadores"
-  ],
-  "Extremos Yokomitsu": [
-    "Extremos"
-  ],
-  "Bombas Hidráulicas": [
-    "Bomba hidraulica"
-  ],
-  "Bieletas Yokomitsu": [
-    "Bieleta"
-  ],
-  "Axiales Yokomitsu": [
-    "Axialprecap"
-  ],
-  "Rótulas Yokomitsu": [
-    "Rotula"
-  ],
-  "Homocínéticas Yokomitsu": [
-    "Homocinética"
-  ],
-  "Semiejes Yokomitsu": [
-    "Semieje"
-  ],
-  "Mazas de Rueda": [
-    "Maza de Rueda"
-  ],
-  "Depósitos": [
-    "Depósito de Agua"
-  ]
+  "Parrillas Suspensión": ["Parrilla suspensión"],
+  "Cremalleras": ["Cremallera"],
+  "Amortiguadores Yokomitsu": ["Amortiguadores"],
+  "Extremos Yk": ["Extremos"],
+  "Bombas Hidráulicas": ["Bomba hidraulica"],
+  "Bieletas Yokomitsu": ["Bieleta"],
+  "Axiales Yk": ["Axialprecap"],
+  "Rótulas Yk": ["Rotula"],
+  "Homocínéticas Yk": ["Homocinética"],
+  "Semiejes Yk": ["Semieje"],
+  "Mazas de Rueda": ["Maza de Rueda"],
+  "Depósitos": ["Depósito de Agua"]
 };
 
 
