@@ -148,7 +148,9 @@ const CATEGORIAS = {
   "Homocínéticas YK": ["Homocinética"],
   "Semiejes YK": ["Semieje"],
   "Mazas de Rueda": ["Maza de Rueda"],
-  "Depósitos": ["Depósito de Agua"]
+  "Depósitos": ["Depósito de Agua"],
+  "Bomba combustible": ["Bomba combustible"],
+  "Electroventilador": ["Electroventilador"]
 };
 
 
