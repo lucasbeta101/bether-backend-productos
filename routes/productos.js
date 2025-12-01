@@ -43,7 +43,53 @@ router.use((req, res, next) => {
   console.log(`📝 [${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
   next();
 });
+const GRUPOS_CATEGORIAS = {
+  "suspension-direccion": [
+    "Amortiguadores", "Barras", "Bieletas", "Brazos Suspension", "Cazoletas",
+    "Discos y Campanas", "Extremos", "Axiales", "Homocinéticas", "Parrillas",
+    "Pastillas de Freno", "Rótulas", "Embragues", "Cajas y Bombas", "Rodamientos",
+    "Mazas", "Semiejes", "Soportes Motor", "Suspensión Neumática", "CTR", "FTE",
+    "Gas Spring Stabilus", "Otros"
+  ],
+  "frenos-embrague": [
+    "Cilindros de Rueda y Componentes", "Bombas de Freno", "Bombas de Embrague",
+    "Bombines de Embrague", "Mordazas y Pistones", "Kits de Reparación Generales",
+    "Flexibles de Freno", "Válvulas Hidráulicas", "Purga y Depósitos",
+    "Bombas de vacío", "Guardapolvos y Sellos", "Varios", "Pistones Servo Freno"
+  ],
+  "yokomitsu": [
+    "Parrillas Suspensión", "Cremalleras", "Amortiguadores YK", "Extremos YK",
+    "Bombas Hidráulicas", "Bieletas YK", "Axiales YK", "Rótulas YK",
+    "Homocínéticas YK", "Semiejes YK", "Mazas de Rueda", "Depósitos",
+    "Bomba combustible", "Electroventilador"
+  ],
+  "carroceria": [
+    "Paragolpes", "Guardabarros", "Puertas", "Rejilla Parrilla", "Marco Cubre Faro",
+    "Capot", "Pasa Ruedas", "Portón Trasero", "Molduras"
+  ]
+};
 
+// 🆕 FUNCIÓN PARA OBTENER CATEGORÍAS DE UN GRUPO
+function getCategoriasPorGrupo(grupo) {
+  if (!grupo || !GRUPOS_CATEGORIAS[grupo]) {
+    return null;
+  }
+  
+  const categoriasGrupo = GRUPOS_CATEGORIAS[grupo];
+  const subcategoriasGrupo = [];
+  
+  // Extraer todas las subcategorías del grupo
+  categoriasGrupo.forEach(categoria => {
+    if (CATEGORIAS[categoria]) {
+      subcategoriasGrupo.push(...CATEGORIAS[categoria]);
+    } else {
+      // Si no es una categoría principal, agregarla directamente
+      subcategoriasGrupo.push(categoria);
+    }
+  });
+  
+  return subcategoriasGrupo;
+}
 const CATEGORIAS = {
   // --- CATEGORÍAS EXISTENTES (NO MODIFICADAS) ---
   "Amortiguadores": [
@@ -524,6 +570,7 @@ router.get('/metadatos', async (req, res) => {
       pagina = null,
       limite = null, 
       categoria = null,
+      grupo = null,  // 🆕 AGREGAR PARÁMETRO GRUPO
       solo_conteo = false
     } = req.query;
 
@@ -548,7 +595,23 @@ router.get('/metadatos', async (req, res) => {
     // Filtros base
     let matchConditions = { tiene_precio_valido: true };
     
-    if (categoria && categoria !== 'todos') {
+    // 🆕 MANEJO DEL PARÁMETRO GRUPO
+    if (grupo && grupo !== 'todos') {
+      const categoriasGrupo = getCategoriasPorGrupo(grupo);
+      
+      if (categoriasGrupo) {
+        console.log(`📦 [METADATOS] Filtrando por grupo: ${grupo}, categorías: ${categoriasGrupo.length}`);
+        matchConditions.categoria = { $in: categoriasGrupo };
+      } else {
+        console.log(`⚠️ [METADATOS] Grupo no reconocido: ${grupo}`);
+        return res.status(400).json({
+          success: false,
+          error: `Grupo "${grupo}" no reconocido`
+        });
+      }
+    }
+    // Filtro por categoría existente (con prioridad si ambos parámetros están presentes)
+    else if (categoria && categoria !== 'todos') {
       if (CATEGORIAS[categoria]) {
         matchConditions.categoria = { $in: CATEGORIAS[categoria] };
       } else {
@@ -692,7 +755,7 @@ router.get('/metadatos', async (req, res) => {
 
 router.get('/filtros-rapidos', async (req, res) => {
   try {
-    const { categoria = null } = req.query;
+    const { categoria = null, grupo = null } = req.query;  // 🆕 AGREGAR PARÁMETRO GRUPO
     
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
@@ -700,7 +763,23 @@ router.get('/filtros-rapidos', async (req, res) => {
 
     let matchConditions = { tiene_precio_valido: true };
     
-    if (categoria && categoria !== 'todos') {
+    // 🆕 MANEJO DEL PARÁMETRO GRUPO
+    if (grupo && grupo !== 'todos') {
+      const categoriasGrupo = getCategoriasPorGrupo(grupo);
+      
+      if (categoriasGrupo) {
+        console.log(`🔍 [FILTROS-RAPIDOS] Filtrando por grupo: ${grupo}, categorías: ${categoriasGrupo.length}`);
+        matchConditions.categoria = { $in: categoriasGrupo };
+      } else {
+        console.log(`⚠️ [FILTROS-RAPIDOS] Grupo no reconocido: ${grupo}`);
+        return res.status(400).json({
+          success: false,
+          error: `Grupo "${grupo}" no reconocido`
+        });
+      }
+    }
+    // Filtro por categoría existente (con prioridad si ambos parámetros están presentes)
+    else if (categoria && categoria !== 'todos') {
       if (CATEGORIAS[categoria]) {
         matchConditions.categoria = { $in: CATEGORIAS[categoria] };
       } else {
