@@ -150,7 +150,20 @@ const CATEGORIAS = {
   "Mazas de Rueda": ["Maza de Rueda"],
   "Depósitos": ["Depósito de Agua"],
   "Bomba combustible": ["Bomba combustible"],
-  "Electroventilador": ["Electroventilador"]
+  "Electroventilador": ["Electroventilador"],
+  "Paragolpes": ["Paragolpes"],
+  "Guardabarros": ["Guardabarros"],
+  "Puertas": ["Puertas"],
+  "Rejilla Parrilla": ["Rejilla parrilla"],
+  "Marco Cubre Faro": ["Marco cubre faro"],
+  "Capot": ["Capot"],
+  "Pasa Ruedas": ["Pasa Ruedas"],
+  "Portón Trasero": ["Portón trasero"],
+  "Molduras": [
+    "Moldura de paragolpe",
+    "Moldura de rejilla parrilla",
+    "Moldura de capot"
+  ]
 };
 
 
@@ -173,12 +186,12 @@ function getValidCategoriesForProduct(product) {
     'brazo': ['Brazos Susp CORVEN', 'Brazos Susp SADAR'],
     'extremo': ['Extremos CORVEN', 'Extremos SADAR', 'Extremos'],
     'axial': ['Axiales CORVEN', 'Axiales SADAR', 'Axialprecap'],
-    'homocinetica': ['Homocínéticas CORVEN', 'Homocínéticas SADAR', 'Homocinética'],
+    'homocinetica': ['Homocinéticas CORVEN', 'Homocinéticas SADAR', 'Homocinética'],
     'parrilla': ['Parrillas CORVEN', 'Parrillas SADAR', 'Parrilla suspensión'],
     'cremallera': ['Cremallera'],
     'cilindro': ['Cilindros de Rueda y Componentes'],
     'piston': ['Cilindros de Rueda y Componentes', 'Mordazas y Pistones', 'Pistones Servo Freno'],
-    'bomba': ['Bombas de Freno', 'Bombas de Embrague', 'Bombas de vacío', 'Bomba hidraulica'],
+    'bomba': ['Bombas de Freno', 'Bombas de Embrague', 'Bombas de vacío', 'Bomba hidraulica', 'Bomba combustible'],
     'cubeta': ['Cilindros de Rueda y Componentes', 'Bombas de Freno'],
     'guardapolvo': ['Cilindros de Rueda y Componentes', 'Guardapolvos y Sellos'],
     'bombin': ['Bombines de Embrague'],
@@ -193,8 +206,20 @@ function getValidCategoriesForProduct(product) {
     'servo': ['Pistones Servo Freno', 'Kits de Reparación Generales'],
     'sello': ['Guardapolvos y Sellos'],
     'maza': ['Mazas CORVEN', 'Mazas HF', 'Maza de Rueda'],
-    'semieje': ['Semiejes CORVEN', 'Semieje']
+    'semieje': ['Semiejes CORVEN', 'Semieje'],
+    'paragolpe': ['Paragolpes'],
+    'guardabarro': ['Guardabarros'],
+    'electro': ['Electroventilador'],
+    'puerta': ['Puertas'],
+    'rejilla': ['Rejilla Parrilla'],
+    'marco': ['Marco Cubre Faro'],
+    'faro': ['Marco Cubre Faro'],
+    'capot': ['Capot'],
+    'pasarueda': ['Pasa Ruedas'],
+    'porton': ['Portón Trasero'],
+    'moldura': ['Molduras']
   };
+  
   const normalizedProduct = normalizeText(product).replace(/s$/, '');
   return categoryMap[normalizedProduct] || [];
 }
@@ -210,7 +235,7 @@ function mapPositionForSearch(position) {
 }
 
 function parseNaturalQuery(query) {
-  console.log('🧐 [PARSER] Analizando:', query);
+  console.log('🧠 [PARSER] Analizando:', query);
   
   const STOP_WORDS = ['para', 'de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'con', 'mi', 'auto'];
   const productKeywords = [
@@ -219,7 +244,10 @@ function parseNaturalQuery(query) {
     'cilindro', 'piston', 'bomba', 'cubeta', 'guardapolvo', 'bombin', 
     'mordaza', 'kit', 'flexible', 'valvula', 'asiento', 'cuerpo', 
     'purgador', 'deposito', 'servo', 'sello',
-    'parrilla', 'cremallera', 'maza', 'semieje'  // ← Nuevas palabras clave
+    'parrilla', 'cremallera', 'maza', 'semieje',
+    // 🆕 PALABRAS CLAVE DE CARROCERÍA Y CHAPA
+    'paragolpe', 'guardabarro', 'puerta', 'rejilla', 'marco', 'faro',
+    'capot', 'pasarueda', 'porton', 'moldura'
   ];
   const positionKeywords = ['delantero', 'trasero', 'izquierdo', 'derecho', 'del', 'pos', 'izq', 'der'];
   
@@ -292,7 +320,7 @@ function parseNaturalQuery(query) {
       result.isStructured = true;
   }
   
-  console.log('🧐 [PARSER] Resultado:', result);
+  console.log('🧠 [PARSER] Resultado:', result);
   return result;
 }
 
@@ -1318,6 +1346,70 @@ function generarContenidoCategoriaSEO(categoria, productos) {
       descripcion: 'Pastillas de freno FERODO, JURID y CORVEN en Mendoza. Máxima seguridad para tu frenado. ✅ Instalación profesional ✅ Garantía ✅ Stock permanente',
       descripcionLarga: 'La seguridad al frenar no tiene precio. En Bethersa encontrás pastillas de freno de las mejores marcas: FERODO, JURID y CORVEN. Para todas las marcas de autos, con garantía de fábrica.',
       keywords: 'pastillas freno, pastillas ferodo, pastillas jurid, pastillas corven, frenos mendoza, pastillas freno mendoza'
+    },
+    // 🆕 CATEGORÍAS DE CARROCERÍA Y CHAPA
+    'Paragolpes': {
+      titulo: 'Paragolpes para Auto - Todas las Marcas | Bethersa Mendoza',
+      h1: 'Paragolpes de Calidad para tu Vehículo',
+      descripcion: 'Paragolpes delanteros y traseros en Mendoza. Stock permanente para todas las marcas. ✅ Entrega inmediata ✅ Mejor precio ✅ Garantía',
+      descripcionLarga: 'Encontrá el paragolpes que necesitás para tu auto en Bethersa. Contamos con stock de paragolpes delanteros y traseros para Ford, Volkswagen, Chevrolet, Peugeot, Renault, Fiat, Toyota y más marcas.',
+      keywords: 'paragolpes, paragolpe delantero, paragolpe trasero, carroceria auto, chapa auto mendoza, paragolpes mendoza, bethersa'
+    },
+    'Guardabarros': {
+      titulo: 'Guardabarros para Auto - Stock Permanente | Bethersa Mendoza',
+      h1: 'Guardabarros de Reposición',
+      descripcion: 'Guardabarros delanteros y traseros en Mendoza. Para todas las marcas de autos. ✅ Stock inmediato ✅ Mejor precio',
+      descripcionLarga: 'Guardabarros de calidad para tu vehículo. En Bethersa tenemos guardabarros delanteros y traseros para la mayoría de marcas y modelos.',
+      keywords: 'guardabarros, guardabarro delantero, guardabarro trasero, carroceria, chapa auto, guardabarros mendoza'
+    },
+    'Puertas': {
+      titulo: 'Puertas para Auto - Carrocería | Bethersa Mendoza',
+      h1: 'Puertas de Reposición para Vehículos',
+      descripcion: 'Puertas delanteras y traseras para autos en Mendoza. Stock para múltiples marcas. ✅ Consultar disponibilidad',
+      descripcionLarga: 'Puertas de carrocería para tu auto. Consulta disponibilidad para tu marca y modelo específico.',
+      keywords: 'puertas auto, puerta delantera, puerta trasera, carroceria, chapa mendoza'
+    },
+    'Rejilla Parrilla': {
+      titulo: 'Rejillas Parrilla para Auto | Bethersa Mendoza',
+      h1: 'Rejillas Parrilla Delanteras',
+      descripcion: 'Rejillas parrilla para autos en Mendoza. Stock permanente. ✅ Entrega inmediata ✅ Consultar compatibilidad',
+      descripcionLarga: 'Rejillas parrilla delantera para múltiples marcas y modelos. Consulta por tu vehículo específico.',
+      keywords: 'rejilla parrilla, parrilla delantera, parrilla auto, carroceria mendoza'
+    },
+    'Marco Cubre Faro': {
+      titulo: 'Marco Cubre Faro - Accesorios Carrocería | Bethersa Mendoza',
+      h1: 'Marcos Cubre Faro para Auto',
+      descripcion: 'Marcos cubre faro delanteros y traseros en Mendoza. ✅ Stock disponible ✅ Consultar por tu modelo',
+      descripcionLarga: 'Marcos cubre faro de calidad para proteger y embellecer tu vehículo.',
+      keywords: 'marco cubre faro, marco faro, cubre optica, accesorios carroceria'
+    },
+    'Capot': {
+      titulo: 'Capot para Auto - Carrocería | Bethersa Mendoza',
+      h1: 'Capot de Reposición',
+      descripcion: 'Capot delantero para autos en Mendoza. Consultar disponibilidad por marca y modelo.',
+      descripcionLarga: 'Capot de carrocería para tu vehículo. Stock para marcas seleccionadas.',
+      keywords: 'capot, capo auto, carroceria delantera, chapa mendoza'
+    },
+    'Pasa Ruedas': {
+      titulo: 'Pasa Ruedas para Auto | Bethersa Mendoza',
+      h1: 'Pasa Ruedas de Reposición',
+      descripcion: 'Pasa ruedas delanteros y traseros en Mendoza. ✅ Stock disponible',
+      descripcionLarga: 'Pasa ruedas de calidad para proteger la carrocería de tu auto.',
+      keywords: 'pasa ruedas, pasaruedas, guardabarro interno, carroceria'
+    },
+    'Portón Trasero': {
+      titulo: 'Portón Trasero para Auto | Bethersa Mendoza',
+      h1: 'Portón Trasero de Reposición',
+      descripcion: 'Portones traseros para autos en Mendoza. Consultar disponibilidad por modelo.',
+      descripcionLarga: 'Portón trasero de carrocería. Consulta por tu marca y modelo específico.',
+      keywords: 'porton trasero, puerta trasera, carroceria trasera, chapa'
+    },
+    'Molduras': {
+      titulo: 'Molduras para Auto - Paragolpes, Capot, Rejilla | Bethersa Mendoza',
+      h1: 'Molduras de Carrocería',
+      descripcion: 'Molduras de paragolpes, capot y rejilla parrilla en Mendoza. ✅ Stock permanente ✅ Todas las marcas',
+      descripcionLarga: 'Molduras de carrocería para embellecer tu auto: molduras de paragolpes, molduras de capot, molduras de rejilla parrilla. Consulta por tu modelo.',
+      keywords: 'molduras auto, moldura paragolpe, moldura capot, moldura rejilla, accesorios carroceria'
     }
   };
 
@@ -2169,8 +2261,10 @@ router.get('/generar-slug/:codigo', async (req, res) => {
 });
 function generarNombreDescriptivo(producto) {
   // ✅ EXCEPCIÓN PARA MARROSE CON CTR O FTE
-  if ((producto.categoria === 'CTR' || producto.categoria === 'FTE') && 
-      producto.proveedor === 'Corven') {
+  if ((producto.categoria === 'CTR' || 
+    producto.categoria === 'FTE' || 
+    producto.categoria === 'Susp Neumática SADAR') && 
+    producto.proveedor === 'Corven') {
     return producto.nombre || '';
   }
   
@@ -2208,7 +2302,17 @@ function generarNombreDescriptivo(producto) {
     'Rodamientos': 'Rodamiento',
     'Semiejes': 'Semieje',
     'Mazas': 'Maza',
-    'Soporte Motor': 'Soporte de Motor'
+    'Soporte Motor': 'Soporte de Motor',
+    // 🆕 CATEGORÍAS DE CARROCERÍA Y CHAPA
+    'Paragolpes': 'Paragolpes',
+    'Guardabarros': 'Guardabarros',
+    'Puertas': 'Puerta',
+    'Rejilla Parrilla': 'Rejilla Parrilla',
+    'Marco Cubre Faro': 'Marco Cubre Faro',
+    'Capot': 'Capot',
+    'Pasa Ruedas': 'Pasa Ruedas',
+    'Portón Trasero': 'Portón Trasero',
+    'Molduras': 'Moldura'
   };
   
   const categoriaDescriptiva = categoriasDescriptivas[categoriaBase] || categoriaBase;
