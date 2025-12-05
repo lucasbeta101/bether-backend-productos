@@ -1032,7 +1032,8 @@ router.get('/producto-rapido/:codigo', async (req, res) => {
           codigo: 1,
           nombre: 1,
           categoria: 1,
-          marca: 1
+          marca: 1,
+          proveedor: 1  // ✅ AGREGAR ESTA LÍNEA
         }
       }
     );
