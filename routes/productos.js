@@ -2764,28 +2764,30 @@ router.get('/exportar-excel', async (req, res) => {
 
     // 2️⃣ CREAR LIBRO DE EXCEL
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Bethersa S.A.';
+    workbook.creator = 'Bethersa';
     workbook.created = new Date();
 
-    // 🆕 CARGAR LOGO (ajusta la ruta según tu estructura de servidor)
+    // 🆕 DESCARGAR Y CARGAR LOGO DESDE URL
     let logoId;
     try {
-      const fs = require('fs');
-      const path = require('path');
+      const https = require('https');
+      const logoUrl = 'https://bethersa.com.ar/Imagenes/Logos/Empresa/Bether.png';
       
-      // Ajusta esta ruta según dónde esté tu servidor
-      const logoPath = path.join(__dirname, '../public/Imagenes/Logos/Empresa/Bether.png');
+      // Descargar logo
+      const logoBuffer = await new Promise((resolve, reject) => {
+        https.get(logoUrl, (response) => {
+          const chunks = [];
+          response.on('data', (chunk) => chunks.push(chunk));
+          response.on('end', () => resolve(Buffer.concat(chunks)));
+          response.on('error', reject);
+        }).on('error', reject);
+      });
       
-      if (fs.existsSync(logoPath)) {
-        const logoBuffer = fs.readFileSync(logoPath);
-        logoId = workbook.addImage({
-          buffer: logoBuffer,
-          extension: 'png',
-        });
-        console.log('✅ [EXCEL] Logo cargado correctamente');
-      } else {
-        console.warn('⚠️ [EXCEL] Logo no encontrado en:', logoPath);
-      }
+      logoId = workbook.addImage({
+        buffer: logoBuffer,
+        extension: 'png',
+      });
+      console.log('✅ [EXCEL] Logo descargado y cargado correctamente');
     } catch (logoError) {
       console.warn('⚠️ [EXCEL] No se pudo cargar el logo:', logoError.message);
     }
@@ -2831,7 +2833,7 @@ router.get('/exportar-excel', async (req, res) => {
 
       // 🆕 AGREGAR TÍTULO Y FECHA DEBAJO DEL LOGO
       const filaTitulo = worksheet.getRow(filaActual);
-      filaTitulo.getCell('A').value = 'LISTA DE PRECIOS - BETHERSA S.A.';
+      filaTitulo.getCell('A').value = 'LISTA DE PRECIOS - BETHERSA';
       worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
       filaTitulo.font = { bold: true, size: 14, color: { argb: 'FF000000' } };
       filaTitulo.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -2849,19 +2851,26 @@ router.get('/exportar-excel', async (req, res) => {
       // Fila en blanco
       filaActual++;
 
-      // 5️⃣ CONFIGURAR COLUMNAS
+      // 5️⃣ CONFIGURAR COLUMNAS Y ENCABEZADO
       worksheet.columns = [
-        { header: 'Código', key: 'codigo', width: 15 },
-        { header: 'Descripción', key: 'descripcion', width: 50 },
-        { header: 'Stock', key: 'stock', width: 15 },
-        { header: 'Precio sin IVA', key: 'precio', width: 15 },
-        { header: 'Tipo', key: 'tipo', width: 10 } // Columna oculta
+        { key: 'codigo', width: 15 },
+        { key: 'descripcion', width: 50 },
+        { key: 'stock', width: 15 },
+        { key: 'precio', width: 15 },
+        { key: 'tipo', width: 10 } // Columna oculta
       ];
 
-      // 6️⃣ ESTILO DEL ENCABEZADO (SOLO LAS CELDAS CON TEXTO)
+      // 6️⃣ CREAR ENCABEZADO MANUALMENTE (fila actual)
       const headerRow = worksheet.getRow(filaActual);
       
-      // ✅ APLICAR ESTILO SOLO A LAS COLUMNAS A, B, C, D (no a toda la fila)
+      // ✅ Definir valores de encabezado
+      headerRow.getCell('A').value = 'Código';
+      headerRow.getCell('B').value = 'Descripción';
+      headerRow.getCell('C').value = 'Stock';
+      headerRow.getCell('D').value = 'Precio sin IVA';
+      headerRow.getCell('E').value = 'Tipo';
+      
+      // ✅ APLICAR ESTILO SOLO A LAS COLUMNAS A, B, C, D
       ['A', 'B', 'C', 'D'].forEach(col => {
         const cell = headerRow.getCell(col);
         cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
