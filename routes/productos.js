@@ -2736,104 +2736,78 @@ function procesarProductoConSEO(producto) {
 }
 router.get('/exportar-excel', async (req, res) => {
   try {
-    console.log('📊 [EXCEL] Iniciando exportación...');
+    console.log('📊 [EXCEL] Iniciando exportación optimizada...');
     
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
-    // 1️⃣ OBTENER TODOS LOS PRODUCTOS CON PRECIO VÁLIDO
-    const productos = await collection.find(
-      { tiene_precio_valido: true },
-      {
-        projection: {
-          _id: 0,
-          codigo: 1,
-          nombre: 1,
-          categoria: 1,
-          proveedor: 1,
-          stock_status: 1,
-          precio_numerico: 1,
-          precio_lista_con_iva: 1,
-          aplicaciones: 1
-        }
-      }
-    ).toArray();
-
-    console.log(`📦 [EXCEL] ${productos.length} productos obtenidos`);
+    // 🆕 CONTAR TOTAL DE PRODUCTOS PRIMERO
+    const totalProductos = await collection.countDocuments({ tiene_precio_valido: true });
+    console.log(`📦 [EXCEL] Total de productos a procesar: ${totalProductos}`);
 
     // 2️⃣ CREAR LIBRO DE EXCEL
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Bethersa';
     workbook.created = new Date();
 
-    // 🆕 DESCARGAR Y CARGAR LOGO DESDE URL
+    // 🆕 DESCARGAR LOGO (con timeout)
     let logoId;
     try {
       const https = require('https');
       const logoUrl = 'https://bethersa.com.ar/Imagenes/Logos/Empresa/Bether.png';
       
-      // Descargar logo
-      const logoBuffer = await new Promise((resolve, reject) => {
-        https.get(logoUrl, (response) => {
-          const chunks = [];
-          response.on('data', (chunk) => chunks.push(chunk));
-          response.on('end', () => resolve(Buffer.concat(chunks)));
-          response.on('error', reject);
-        }).on('error', reject);
-      });
+      const logoBuffer = await Promise.race([
+        new Promise((resolve, reject) => {
+          https.get(logoUrl, (response) => {
+            const chunks = [];
+            response.on('data', (chunk) => chunks.push(chunk));
+            response.on('end', () => resolve(Buffer.concat(chunks)));
+            response.on('error', reject);
+          }).on('error', reject);
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+      ]);
       
       logoId = workbook.addImage({
         buffer: logoBuffer,
         extension: 'png',
       });
-      console.log('✅ [EXCEL] Logo descargado y cargado correctamente');
+      console.log('✅ [EXCEL] Logo cargado');
     } catch (logoError) {
-      console.warn('⚠️ [EXCEL] No se pudo cargar el logo:', logoError.message);
+      console.warn('⚠️ [EXCEL] Logo no disponible:', logoError.message);
     }
 
-    // 3️⃣ AGRUPAR POR PROVEEDOR
-    const productosPorProveedor = {};
-    productos.forEach(p => {
-      const proveedor = p.proveedor || 'Sin Proveedor';
-      if (!productosPorProveedor[proveedor]) {
-        productosPorProveedor[proveedor] = [];
-      }
-      productosPorProveedor[proveedor].push(p);
-    });
+    // 3️⃣ AGRUPAR POR PROVEEDOR (USANDO CURSOR PARA NO CARGAR TODO EN MEMORIA)
+    const proveedores = await collection.distinct('proveedor', { tiene_precio_valido: true });
+    console.log(`🏢 [EXCEL] ${proveedores.length} proveedores encontrados`);
 
-    const proveedores = Object.keys(productosPorProveedor).sort();
-    console.log(`🏢 [EXCEL] Proveedores encontrados: ${proveedores.join(', ')}`);
+    // 4️⃣ PROCESAR UN PROVEEDOR A LA VEZ
+    for (const proveedor of proveedores.sort()) {
+      const nombreProveedor = proveedor || 'Sin Proveedor';
+      console.log(`\n📄 [EXCEL] Procesando: ${nombreProveedor}`);
 
-    // 4️⃣ CREAR UNA HOJA POR PROVEEDOR
-    for (const proveedor of proveedores) {
-      const productosProveedor = productosPorProveedor[proveedor];
-      console.log(`\n📄 [EXCEL] Procesando: ${proveedor} (${productosProveedor.length} productos)`);
-
-      // Crear hoja (máximo 31 caracteres)
-      const nombreHoja = proveedor.substring(0, 31);
+      // Crear hoja
+      const nombreHoja = nombreProveedor.substring(0, 31);
       const worksheet = workbook.addWorksheet(nombreHoja);
 
       let filaActual = 1;
 
-      // 🆕 AGREGAR LOGO EN LA PARTE SUPERIOR (filas 1-5)
+      // AGREGAR LOGO
       if (logoId !== undefined) {
         worksheet.addImage(logoId, {
-          tl: { col: 1.8, row: 0 },    // Top-left: centrado horizontalmente
-          ext: { width: 300, height: 180 } // Tamaño más grande del logo
+          tl: { col: 1.8, row: 0 },
+          ext: { width: 300, height: 180 }
         });
         
-        // Ajustar altura de las filas del logo (más espacio)
-        worksheet.getRow(1).height = 22;
-        worksheet.getRow(2).height = 22;
-        worksheet.getRow(3).height = 22;
-        worksheet.getRow(4).height = 22;
-        worksheet.getRow(5).height = 22;
+        for (let i = 1; i <= 5; i++) {
+          worksheet.getRow(i).height = 22;
+        }
         
-        filaActual = 6; // Empezar después del logo (fila 6)
+        filaActual = 6;
       }
 
-      // 🆕 AGREGAR TÍTULO Y FECHA DEBAJO DEL LOGO
+      // TÍTULO Y FECHA
       const filaTitulo = worksheet.getRow(filaActual);
       filaTitulo.getCell('A').value = 'LISTA DE PRECIOS - BETHERSA';
       worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
@@ -2848,31 +2822,25 @@ router.get('/exportar-excel', async (req, res) => {
       filaFecha.font = { size: 11, color: { argb: 'FF666666' } };
       filaFecha.alignment = { horizontal: 'center', vertical: 'middle' };
       filaFecha.height = 20;
-      filaActual++;
+      filaActual += 2;
 
-      // Fila en blanco
-      filaActual++;
-
-      // 5️⃣ CONFIGURAR COLUMNAS Y ENCABEZADO
+      // CONFIGURAR COLUMNAS
       worksheet.columns = [
         { key: 'codigo', width: 15 },
         { key: 'descripcion', width: 50 },
         { key: 'stock', width: 15 },
         { key: 'precio', width: 15 },
-        { key: 'tipo', width: 10 } // Columna oculta
+        { key: 'tipo', width: 10 }
       ];
 
-      // 6️⃣ CREAR ENCABEZADO MANUALMENTE (fila actual)
+      // ENCABEZADO
       const headerRow = worksheet.getRow(filaActual);
-      
-      // ✅ Definir valores de encabezado
       headerRow.getCell('A').value = 'Código';
       headerRow.getCell('B').value = 'Descripción';
       headerRow.getCell('C').value = 'Stock';
       headerRow.getCell('D').value = 'Precio sin IVA';
       headerRow.getCell('E').value = 'Tipo';
       
-      // ✅ APLICAR ESTILO SOLO A LAS COLUMNAS A, B, C, D
       ['A', 'B', 'C', 'D'].forEach(col => {
         const cell = headerRow.getCell(col);
         cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
@@ -2887,29 +2855,23 @@ router.get('/exportar-excel', async (req, res) => {
       headerRow.height = 25;
       filaActual++;
 
-      // 7️⃣ RECOPILAR MARCAS DE VEHÍCULOS
-      const marcasSet = new Set();
-      productosProveedor.forEach(p => {
-        const aplicaciones = p.aplicaciones || [];
-        aplicaciones.forEach(app => {
-          if (app.marca) marcasSet.add(app.marca);
-        });
+      // 🆕 OBTENER MARCAS PARA ESTE PROVEEDOR (SIN CARGAR PRODUCTOS)
+      const marcas = await collection.distinct('aplicaciones.marca', {
+        tiene_precio_valido: true,
+        proveedor: nombreProveedor
       });
 
-      const marcas = Array.from(marcasSet).sort();
-      console.log(`  🚗 Marcas: ${marcas.length}`);
+      console.log(`  🚗 ${marcas.length} marcas en este proveedor`);
 
-      // 8️⃣ ITERAR POR CADA MARCA
-      for (const marca of marcas) {
+      // 🆕 PROCESAR MARCA POR MARCA
+      for (const marca of marcas.filter(m => m).sort()) {
         // Agregar fila de MARCA
         const filaMarca = worksheet.getRow(filaActual);
         filaMarca.getCell('codigo').value = `*** ${marca} ***`;
         filaMarca.getCell('tipo').value = 'MARCA';
         
-        // Fusionar celdas A-D
         worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
         
-        // ✅ Estilo solo en la celda fusionada
         const celdaMarca = filaMarca.getCell('A');
         celdaMarca.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
         celdaMarca.fill = {
@@ -2922,36 +2884,48 @@ router.get('/exportar-excel', async (req, res) => {
         
         filaActual++;
 
-        // 9️⃣ AGRUPAR POR MODELO Y ELIMINAR DUPLICADOS POR CÓDIGO
-        const productosPorModelo = {};
-        const productosUnicos = new Map(); // Para trackear productos únicos por código
+        // 🆕 OBTENER PRODUCTOS DE ESTA MARCA (CURSOR PARA LIBERAR MEMORIA)
+        const cursor = collection.find(
+          {
+            tiene_precio_valido: true,
+            proveedor: nombreProveedor,
+            'aplicaciones.marca': marca
+          },
+          {
+            projection: {
+              _id: 0,
+              codigo: 1,
+              nombre: 1,
+              categoria: 1,
+              stock_status: 1,
+              precio_numerico: 1,
+              precio_lista_con_iva: 1,
+              aplicaciones: 1
+            }
+          }
+        );
+
+        // Agrupar productos únicos
+        const productosUnicos = new Map();
         
-        productosProveedor.forEach(p => {
-          const aplicaciones = p.aplicaciones || [];
-          const aplicMarca = aplicaciones.filter(app => app.marca === marca);
+        for await (const p of cursor) {
+          const aplicMarca = p.aplicaciones?.filter(app => app.marca === marca) || [];
           
-          // Recopilar todos los modelos compatibles para este producto
           const modelosCompatibles = new Set();
           aplicMarca.forEach(app => {
-            if (app.modelo) {
-              modelosCompatibles.add(app.modelo);
-            }
+            if (app.modelo) modelosCompatibles.add(app.modelo);
           });
           
-          // Si no hay modelos, usar "Sin Modelo"
           if (modelosCompatibles.size === 0) {
             modelosCompatibles.add('Sin Modelo');
           }
           
-          // Crear clave única: código + marca
           const claveUnica = `${p.codigo}_${marca}`;
           
-          // Si ya procesamos este producto para esta marca, agregar modelos
           if (productosUnicos.has(claveUnica)) {
             const productoExistente = productosUnicos.get(claveUnica);
             modelosCompatibles.forEach(m => productoExistente.modelos.add(m));
           } else {
-            // Primera vez que vemos este producto
             const precio = p.precio_numerico || p.precio_lista_con_iva || 0;
             const precioSinIVA = (precio / 1.21).toFixed(2);
             
@@ -2959,14 +2933,15 @@ router.get('/exportar-excel', async (req, res) => {
               codigo: p.codigo,
               descripcion: p.nombre,
               stock: p.stock_status || 'Sin información',
-              precio: `${precioSinIVA}`,
+              precio: `$${precioSinIVA}`,
               categoria: p.categoria || 'Sin Categoría',
               modelos: new Set(modelosCompatibles)
             });
           }
-        });
-        
-        // Ahora agrupar por modelo
+        }
+
+        // Agrupar por modelo
+        const productosPorModelo = {};
         productosUnicos.forEach(producto => {
           producto.modelos.forEach(modelo => {
             if (!productosPorModelo[modelo]) {
@@ -2987,18 +2962,19 @@ router.get('/exportar-excel', async (req, res) => {
           });
         });
 
-        // 🔟 ITERAR POR CADA MODELO
+        // Limpiar memoria
+        productosUnicos.clear();
+
+        // Escribir modelos
         const modelos = Object.keys(productosPorModelo).sort();
         
         for (const modelo of modelos) {
-          // Agregar fila de MODELO
           const filaModelo = worksheet.getRow(filaActual);
           filaModelo.getCell('codigo').value = `  >> ${modelo}`;
           filaModelo.getCell('tipo').value = 'MODELO';
           
           worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
           
-          // ✅ Estilo solo en la celda fusionada
           const celdaModelo = filaModelo.getCell('A');
           celdaModelo.font = { bold: true, size: 11, color: { argb: 'FF000000' } };
           celdaModelo.fill = {
@@ -3011,18 +2987,15 @@ router.get('/exportar-excel', async (req, res) => {
           
           filaActual++;
 
-          // 1️⃣1️⃣ ITERAR POR CADA CATEGORÍA
           const categorias = Object.keys(productosPorModelo[modelo]).sort();
           
           for (const categoria of categorias) {
-            // Agregar fila de CATEGORÍA
             const filaCategoria = worksheet.getRow(filaActual);
             filaCategoria.getCell('codigo').value = `    • ${categoria}`;
             filaCategoria.getCell('tipo').value = 'CATEGORIA';
             
             worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
             
-            // ✅ Estilo solo en la celda fusionada
             const celdaCategoria = filaCategoria.getCell('A');
             celdaCategoria.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
             celdaCategoria.fill = {
@@ -3035,7 +3008,6 @@ router.get('/exportar-excel', async (req, res) => {
             
             filaActual++;
 
-            // 1️⃣2️⃣ AGREGAR PRODUCTOS
             const productosCategoria = productosPorModelo[modelo][categoria];
             
             productosCategoria.forEach(prod => {
@@ -3045,23 +3017,23 @@ router.get('/exportar-excel', async (req, res) => {
               filaProd.getCell('stock').value = prod.stock;
               filaProd.getCell('precio').value = prod.precio;
               filaProd.getCell('tipo').value = 'PRODUCTO';
-              
-              // Estilo normal de productos (sin color de fondo)
               filaProd.alignment = { vertical: 'middle' };
-              
               filaActual++;
             });
           }
         }
+
+        // Limpiar memoria después de cada marca
+        for (const modelo in productosPorModelo) {
+          delete productosPorModelo[modelo];
+        }
       }
 
-      // 1️⃣3️⃣ OCULTAR COLUMNA "Tipo"
       worksheet.getColumn('tipo').hidden = true;
-
-      console.log(`  ✅ Hoja "${nombreHoja}": ${filaActual - 2} registros`);
+      console.log(`  ✅ Hoja "${nombreHoja}" completada`);
     }
 
-    // 1️⃣4️⃣ GENERAR BUFFER Y ENVIAR
+    // GENERAR Y ENVIAR
     const buffer = await workbook.xlsx.writeBuffer();
     
     const timestamp = new Date().toISOString().split('T')[0];
@@ -3072,6 +3044,7 @@ router.get('/exportar-excel', async (req, res) => {
     res.setHeader('Content-Length', buffer.length);
     
     console.log(`\n✅ [EXCEL] Exportación completada: ${nombreArchivo}`);
+    console.log(`📊 Memoria usada: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`);
     
     res.send(buffer);
 
