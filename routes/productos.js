@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { MongoClient, ServerApiVersion } = require('mongodb');
+const ExcelJS = require('exceljs');
 
 // ===== CONFIGURACIÓN MONGODB =====
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://lucasbeta101:rEeTjUzGt9boy4Zy@bether.qxglnnl.mongodb.net/?retryWrites=true&w=majority&appName=Bether";
@@ -2733,5 +2734,239 @@ function procesarProductoConSEO(producto) {
     datos_estructurados: datosEstructurados
   };
 }
+router.get('/exportar-excel', async (req, res) => {
+  try {
+    console.log('📊 [EXCEL] Iniciando exportación...');
+    
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
 
+    // 1️⃣ OBTENER TODOS LOS PRODUCTOS CON PRECIO VÁLIDO
+    const productos = await collection.find(
+      { tiene_precio_valido: true },
+      {
+        projection: {
+          _id: 0,
+          codigo: 1,
+          nombre: 1,
+          categoria: 1,
+          proveedor: 1,
+          stock_status: 1,
+          precio_numerico: 1,
+          precio_lista_con_iva: 1,
+          aplicaciones: 1
+        }
+      }
+    ).toArray();
+
+    console.log(`📦 [EXCEL] ${productos.length} productos obtenidos`);
+
+    // 2️⃣ CREAR LIBRO DE EXCEL
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Bethersa S.A.';
+    workbook.created = new Date();
+
+    // 3️⃣ AGRUPAR POR PROVEEDOR
+    const productosPorProveedor = {};
+    productos.forEach(p => {
+      const proveedor = p.proveedor || 'Sin Proveedor';
+      if (!productosPorProveedor[proveedor]) {
+        productosPorProveedor[proveedor] = [];
+      }
+      productosPorProveedor[proveedor].push(p);
+    });
+
+    const proveedores = Object.keys(productosPorProveedor).sort();
+    console.log(`🏢 [EXCEL] Proveedores encontrados: ${proveedores.join(', ')}`);
+
+    // 4️⃣ CREAR UNA HOJA POR PROVEEDOR
+    for (const proveedor of proveedores) {
+      const productosProveedor = productosPorProveedor[proveedor];
+      console.log(`\n📄 [EXCEL] Procesando: ${proveedor} (${productosProveedor.length} productos)`);
+
+      // Crear hoja (máximo 31 caracteres)
+      const nombreHoja = proveedor.substring(0, 31);
+      const worksheet = workbook.addWorksheet(nombreHoja);
+
+      // 5️⃣ CONFIGURAR COLUMNAS
+      worksheet.columns = [
+        { header: 'Código', key: 'codigo', width: 15 },
+        { header: 'Descripción', key: 'descripcion', width: 50 },
+        { header: 'Stock', key: 'stock', width: 15 },
+        { header: 'Precio sin IVA', key: 'precio', width: 15 },
+        { header: 'Tipo', key: 'tipo', width: 10 } // Columna oculta
+      ];
+
+      // 6️⃣ ESTILO DEL ENCABEZADO
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF366092' }
+      };
+      headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
+      headerRow.height = 25;
+
+      // 7️⃣ RECOPILAR MARCAS DE VEHÍCULOS
+      const marcasSet = new Set();
+      productosProveedor.forEach(p => {
+        const aplicaciones = p.aplicaciones || [];
+        aplicaciones.forEach(app => {
+          if (app.marca) marcasSet.add(app.marca);
+        });
+      });
+
+      const marcas = Array.from(marcasSet).sort();
+      console.log(`  🚗 Marcas: ${marcas.length}`);
+
+      let filaActual = 2; // Empezar después del header
+
+      // 8️⃣ ITERAR POR CADA MARCA
+      for (const marca of marcas) {
+        // Agregar fila de MARCA
+        const filaMarca = worksheet.getRow(filaActual);
+        filaMarca.getCell('codigo').value = `*** ${marca} ***`;
+        filaMarca.getCell('tipo').value = 'MARCA';
+        
+        // Fusionar celdas A-D
+        worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
+        
+        // Estilo de MARCA (azul oscuro)
+        filaMarca.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+        filaMarca.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF4472C4' }
+        };
+        filaMarca.alignment = { horizontal: 'center', vertical: 'middle' };
+        filaMarca.height = 30;
+        
+        filaActual++;
+
+        // 9️⃣ AGRUPAR POR MODELO
+        const productosPorModelo = {};
+        productosProveedor.forEach(p => {
+          const aplicaciones = p.aplicaciones || [];
+          const aplicMarca = aplicaciones.filter(app => app.marca === marca);
+          
+          aplicMarca.forEach(app => {
+            const modelo = app.modelo || 'Sin Modelo';
+            if (!productosPorModelo[modelo]) {
+              productosPorModelo[modelo] = {};
+            }
+            
+            const categoria = p.categoria || 'Sin Categoría';
+            if (!productosPorModelo[modelo][categoria]) {
+              productosPorModelo[modelo][categoria] = [];
+            }
+            
+            const precio = p.precio_numerico || p.precio_lista_con_iva || 0;
+            const precioSinIVA = (precio / 1.21).toFixed(2);
+            
+            productosPorModelo[modelo][categoria].push({
+              codigo: p.codigo,
+              descripcion: p.nombre,
+              stock: p.stock_status || 'Sin información',
+              precio: `$${precioSinIVA}`
+            });
+          });
+        });
+
+        // 🔟 ITERAR POR CADA MODELO
+        const modelos = Object.keys(productosPorModelo).sort();
+        
+        for (const modelo of modelos) {
+          // Agregar fila de MODELO
+          const filaModelo = worksheet.getRow(filaActual);
+          filaModelo.getCell('codigo').value = `  >> ${modelo}`;
+          filaModelo.getCell('tipo').value = 'MODELO';
+          
+          worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
+          
+          // Estilo de MODELO (naranja)
+          filaModelo.font = { bold: true, size: 11, color: { argb: 'FF000000' } };
+          filaModelo.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFFC000' }
+          };
+          filaModelo.alignment = { horizontal: 'left', vertical: 'middle' };
+          filaModelo.height = 24;
+          
+          filaActual++;
+
+          // 1️⃣1️⃣ ITERAR POR CADA CATEGORÍA
+          const categorias = Object.keys(productosPorModelo[modelo]).sort();
+          
+          for (const categoria of categorias) {
+            // Agregar fila de CATEGORÍA
+            const filaCategoria = worksheet.getRow(filaActual);
+            filaCategoria.getCell('codigo').value = `    • ${categoria}`;
+            filaCategoria.getCell('tipo').value = 'CATEGORIA';
+            
+            worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
+            
+            // Estilo de CATEGORÍA (verde)
+            filaCategoria.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+            filaCategoria.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FF70AD47' }
+            };
+            filaCategoria.alignment = { horizontal: 'left', vertical: 'middle' };
+            filaCategoria.height = 20;
+            
+            filaActual++;
+
+            // 1️⃣2️⃣ AGREGAR PRODUCTOS
+            const productosCategoria = productosPorModelo[modelo][categoria];
+            
+            productosCategoria.forEach(prod => {
+              const filaProd = worksheet.getRow(filaActual);
+              filaProd.getCell('codigo').value = prod.codigo;
+              filaProd.getCell('descripcion').value = prod.descripcion;
+              filaProd.getCell('stock').value = prod.stock;
+              filaProd.getCell('precio').value = prod.precio;
+              filaProd.getCell('tipo').value = 'PRODUCTO';
+              
+              // Estilo normal de productos
+              filaProd.alignment = { vertical: 'middle' };
+              
+              filaActual++;
+            });
+          }
+        }
+      }
+
+      // 1️⃣3️⃣ OCULTAR COLUMNA "Tipo"
+      worksheet.getColumn('tipo').hidden = true;
+
+      console.log(`  ✅ Hoja "${nombreHoja}": ${filaActual - 2} registros`);
+    }
+
+    // 1️⃣4️⃣ GENERAR BUFFER Y ENVIAR
+    const buffer = await workbook.xlsx.writeBuffer();
+    
+    const timestamp = new Date().toISOString().split('T')[0];
+    const nombreArchivo = `productos_bethersa_${timestamp}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
+    res.setHeader('Content-Length', buffer.length);
+    
+    console.log(`\n✅ [EXCEL] Exportación completada: ${nombreArchivo}`);
+    
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('❌ [EXCEL] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al generar el archivo Excel',
+      details: error.message
+    });
+  }
+});
 module.exports = router;
