@@ -2767,6 +2767,29 @@ router.get('/exportar-excel', async (req, res) => {
     workbook.creator = 'Bethersa S.A.';
     workbook.created = new Date();
 
+    // 🆕 CARGAR LOGO (ajusta la ruta según tu estructura de servidor)
+    let logoId;
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      
+      // Ajusta esta ruta según dónde esté tu servidor
+      const logoPath = path.join(__dirname, '../public/Imagenes/Logos/Empresa/Bether.png');
+      
+      if (fs.existsSync(logoPath)) {
+        const logoBuffer = fs.readFileSync(logoPath);
+        logoId = workbook.addImage({
+          buffer: logoBuffer,
+          extension: 'png',
+        });
+        console.log('✅ [EXCEL] Logo cargado correctamente');
+      } else {
+        console.warn('⚠️ [EXCEL] Logo no encontrado en:', logoPath);
+      }
+    } catch (logoError) {
+      console.warn('⚠️ [EXCEL] No se pudo cargar el logo:', logoError.message);
+    }
+
     // 3️⃣ AGRUPAR POR PROVEEDOR
     const productosPorProveedor = {};
     productos.forEach(p => {
@@ -2789,6 +2812,43 @@ router.get('/exportar-excel', async (req, res) => {
       const nombreHoja = proveedor.substring(0, 31);
       const worksheet = workbook.addWorksheet(nombreHoja);
 
+      let filaActual = 1;
+
+      // 🆕 AGREGAR LOGO EN LA PARTE SUPERIOR (filas 1-3)
+      if (logoId !== undefined) {
+        worksheet.addImage(logoId, {
+          tl: { col: 0, row: 0 },      // Top-left: columna A, fila 1
+          ext: { width: 180, height: 60 } // Tamaño del logo
+        });
+        
+        // Ajustar altura de las filas del logo
+        worksheet.getRow(1).height = 20;
+        worksheet.getRow(2).height = 20;
+        worksheet.getRow(3).height = 20;
+        
+        filaActual = 4; // Empezar después del logo
+      }
+
+      // 🆕 AGREGAR TÍTULO Y FECHA DEBAJO DEL LOGO
+      const filaTitulo = worksheet.getRow(filaActual);
+      filaTitulo.getCell('A').value = 'LISTA DE PRECIOS - BETHERSA S.A.';
+      worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
+      filaTitulo.font = { bold: true, size: 14, color: { argb: 'FF000000' } };
+      filaTitulo.alignment = { horizontal: 'center', vertical: 'middle' };
+      filaTitulo.height = 25;
+      filaActual++;
+
+      const filaFecha = worksheet.getRow(filaActual);
+      filaFecha.getCell('A').value = `Fecha: ${new Date().toLocaleDateString('es-AR')}`;
+      worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
+      filaFecha.font = { size: 11, color: { argb: 'FF666666' } };
+      filaFecha.alignment = { horizontal: 'center', vertical: 'middle' };
+      filaFecha.height = 20;
+      filaActual++;
+
+      // Fila en blanco
+      filaActual++;
+
       // 5️⃣ CONFIGURAR COLUMNAS
       worksheet.columns = [
         { header: 'Código', key: 'codigo', width: 15 },
@@ -2798,16 +2858,23 @@ router.get('/exportar-excel', async (req, res) => {
         { header: 'Tipo', key: 'tipo', width: 10 } // Columna oculta
       ];
 
-      // 6️⃣ ESTILO DEL ENCABEZADO
-      const headerRow = worksheet.getRow(1);
-      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-      headerRow.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF366092' }
-      };
-      headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
+      // 6️⃣ ESTILO DEL ENCABEZADO (SOLO LAS CELDAS CON TEXTO)
+      const headerRow = worksheet.getRow(filaActual);
+      
+      // ✅ APLICAR ESTILO SOLO A LAS COLUMNAS A, B, C, D (no a toda la fila)
+      ['A', 'B', 'C', 'D'].forEach(col => {
+        const cell = headerRow.getCell(col);
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF366092' }
+        };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+      
       headerRow.height = 25;
+      filaActual++;
 
       // 7️⃣ RECOPILAR MARCAS DE VEHÍCULOS
       const marcasSet = new Set();
@@ -2821,8 +2888,6 @@ router.get('/exportar-excel', async (req, res) => {
       const marcas = Array.from(marcasSet).sort();
       console.log(`  🚗 Marcas: ${marcas.length}`);
 
-      let filaActual = 2; // Empezar después del header
-
       // 8️⃣ ITERAR POR CADA MARCA
       for (const marca of marcas) {
         // Agregar fila de MARCA
@@ -2833,14 +2898,15 @@ router.get('/exportar-excel', async (req, res) => {
         // Fusionar celdas A-D
         worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
         
-        // Estilo de MARCA (azul oscuro)
-        filaMarca.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
-        filaMarca.fill = {
+        // ✅ Estilo solo en la celda fusionada
+        const celdaMarca = filaMarca.getCell('A');
+        celdaMarca.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+        celdaMarca.fill = {
           type: 'pattern',
           pattern: 'solid',
           fgColor: { argb: 'FF4472C4' }
         };
-        filaMarca.alignment = { horizontal: 'center', vertical: 'middle' };
+        celdaMarca.alignment = { horizontal: 'center', vertical: 'middle' };
         filaMarca.height = 30;
         
         filaActual++;
@@ -2885,14 +2951,15 @@ router.get('/exportar-excel', async (req, res) => {
           
           worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
           
-          // Estilo de MODELO (naranja)
-          filaModelo.font = { bold: true, size: 11, color: { argb: 'FF000000' } };
-          filaModelo.fill = {
+          // ✅ Estilo solo en la celda fusionada
+          const celdaModelo = filaModelo.getCell('A');
+          celdaModelo.font = { bold: true, size: 11, color: { argb: 'FF000000' } };
+          celdaModelo.fill = {
             type: 'pattern',
             pattern: 'solid',
             fgColor: { argb: 'FFFFC000' }
           };
-          filaModelo.alignment = { horizontal: 'left', vertical: 'middle' };
+          celdaModelo.alignment = { horizontal: 'left', vertical: 'middle' };
           filaModelo.height = 24;
           
           filaActual++;
@@ -2908,14 +2975,15 @@ router.get('/exportar-excel', async (req, res) => {
             
             worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
             
-            // Estilo de CATEGORÍA (verde)
-            filaCategoria.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
-            filaCategoria.fill = {
+            // ✅ Estilo solo en la celda fusionada
+            const celdaCategoria = filaCategoria.getCell('A');
+            celdaCategoria.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+            celdaCategoria.fill = {
               type: 'pattern',
               pattern: 'solid',
               fgColor: { argb: 'FF70AD47' }
             };
-            filaCategoria.alignment = { horizontal: 'left', vertical: 'middle' };
+            celdaCategoria.alignment = { horizontal: 'left', vertical: 'middle' };
             filaCategoria.height = 20;
             
             filaActual++;
@@ -2931,7 +2999,7 @@ router.get('/exportar-excel', async (req, res) => {
               filaProd.getCell('precio').value = prod.precio;
               filaProd.getCell('tipo').value = 'PRODUCTO';
               
-              // Estilo normal de productos
+              // Estilo normal de productos (sin color de fondo)
               filaProd.alignment = { vertical: 'middle' };
               
               filaActual++;
