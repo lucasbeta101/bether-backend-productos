@@ -2922,31 +2922,67 @@ router.get('/exportar-excel', async (req, res) => {
         
         filaActual++;
 
-        // 9️⃣ AGRUPAR POR MODELO
+        // 9️⃣ AGRUPAR POR MODELO Y ELIMINAR DUPLICADOS POR CÓDIGO
         const productosPorModelo = {};
+        const productosUnicos = new Map(); // Para trackear productos únicos por código
+        
         productosProveedor.forEach(p => {
           const aplicaciones = p.aplicaciones || [];
           const aplicMarca = aplicaciones.filter(app => app.marca === marca);
           
+          // Recopilar todos los modelos compatibles para este producto
+          const modelosCompatibles = new Set();
           aplicMarca.forEach(app => {
-            const modelo = app.modelo || 'Sin Modelo';
+            if (app.modelo) {
+              modelosCompatibles.add(app.modelo);
+            }
+          });
+          
+          // Si no hay modelos, usar "Sin Modelo"
+          if (modelosCompatibles.size === 0) {
+            modelosCompatibles.add('Sin Modelo');
+          }
+          
+          // Crear clave única: código + marca
+          const claveUnica = `${p.codigo}_${marca}`;
+          
+          // Si ya procesamos este producto para esta marca, agregar modelos
+          if (productosUnicos.has(claveUnica)) {
+            const productoExistente = productosUnicos.get(claveUnica);
+            modelosCompatibles.forEach(m => productoExistente.modelos.add(m));
+          } else {
+            // Primera vez que vemos este producto
+            const precio = p.precio_numerico || p.precio_lista_con_iva || 0;
+            const precioSinIVA = (precio / 1.21).toFixed(2);
+            
+            productosUnicos.set(claveUnica, {
+              codigo: p.codigo,
+              descripcion: p.nombre,
+              stock: p.stock_status || 'Sin información',
+              precio: `${precioSinIVA}`,
+              categoria: p.categoria || 'Sin Categoría',
+              modelos: new Set(modelosCompatibles)
+            });
+          }
+        });
+        
+        // Ahora agrupar por modelo
+        productosUnicos.forEach(producto => {
+          producto.modelos.forEach(modelo => {
             if (!productosPorModelo[modelo]) {
               productosPorModelo[modelo] = {};
             }
             
-            const categoria = p.categoria || 'Sin Categoría';
+            const categoria = producto.categoria;
             if (!productosPorModelo[modelo][categoria]) {
               productosPorModelo[modelo][categoria] = [];
             }
             
-            const precio = p.precio_numerico || p.precio_lista_con_iva || 0;
-            const precioSinIVA = (precio / 1.21).toFixed(2);
-            
             productosPorModelo[modelo][categoria].push({
-              codigo: p.codigo,
-              descripcion: p.nombre,
-              stock: p.stock_status || 'Sin información',
-              precio: `$${precioSinIVA}`
+              codigo: producto.codigo,
+              descripcion: producto.descripcion,
+              stock: producto.stock,
+              precio: producto.precio
             });
           });
         });
