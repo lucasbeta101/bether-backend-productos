@@ -2819,7 +2819,7 @@ router.get('/exportar-excel', async (req, res) => {
       // 🆕 AGREGAR LOGO EN LA PARTE SUPERIOR (filas 1-5)
       if (logoId !== undefined) {
         worksheet.addImage(logoId, {
-          tl: { col: 2, row: 0 },    // Top-left: centrado horizontalmente
+          tl: { col: 1.8, row: 0 },    // Top-left: centrado horizontalmente
           ext: { width: 300, height: 180 } // Tamaño más grande del logo
         });
         
