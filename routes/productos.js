@@ -2819,8 +2819,8 @@ router.get('/exportar-excel', async (req, res) => {
       // 🆕 AGREGAR LOGO EN LA PARTE SUPERIOR (filas 1-5)
       if (logoId !== undefined) {
         worksheet.addImage(logoId, {
-          tl: { col: 1.5, row: 0 },    // Top-left: centrado horizontalmente
-          ext: { width: 300, height: 273 } // Tamaño más grande del logo
+          tl: { col: 1.7, row: 0 },    // Top-left: centrado horizontalmente
+          ext: { width: 300, height: 200 } // Tamaño más grande del logo
         });
         
         // Ajustar altura de las filas del logo (más espacio)
