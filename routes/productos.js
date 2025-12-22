@@ -2816,19 +2816,21 @@ router.get('/exportar-excel', async (req, res) => {
 
       let filaActual = 1;
 
-      // 🆕 AGREGAR LOGO EN LA PARTE SUPERIOR (filas 1-3)
+      // 🆕 AGREGAR LOGO EN LA PARTE SUPERIOR (filas 1-5)
       if (logoId !== undefined) {
         worksheet.addImage(logoId, {
-          tl: { col: 0, row: 0 },      // Top-left: columna A, fila 1
-          ext: { width: 180, height: 60 } // Tamaño del logo
+          tl: { col: 0.5, row: 0 },    // Top-left: centrado horizontalmente
+          ext: { width: 300, height: 100 } // Tamaño más grande del logo
         });
         
-        // Ajustar altura de las filas del logo
-        worksheet.getRow(1).height = 20;
-        worksheet.getRow(2).height = 20;
-        worksheet.getRow(3).height = 20;
+        // Ajustar altura de las filas del logo (más espacio)
+        worksheet.getRow(1).height = 22;
+        worksheet.getRow(2).height = 22;
+        worksheet.getRow(3).height = 22;
+        worksheet.getRow(4).height = 22;
+        worksheet.getRow(5).height = 22;
         
-        filaActual = 4; // Empezar después del logo
+        filaActual = 6; // Empezar después del logo (fila 6)
       }
 
       // 🆕 AGREGAR TÍTULO Y FECHA DEBAJO DEL LOGO
