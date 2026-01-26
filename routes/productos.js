@@ -2736,6 +2736,35 @@ function procesarProductoConSEO(producto) {
     datos_estructurados: datosEstructurados
   };
 }
+// 🆕 ENDPOINT PARA OBTENER PROVEEDORES Y CATEGORÍAS DISPONIBLES
+router.get('/metadatos-filtros', async (req, res) => {
+  try {
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+    
+    // Obtener proveedores únicos
+    const proveedores = await collection.distinct('proveedor', { tiene_precio_valido: true });
+    
+    // Obtener categorías únicas
+    const categorias = await collection.distinct('categoria', { tiene_precio_valido: true });
+    
+    res.json({
+      success: true,
+      proveedores: proveedores.filter(p => p).sort(),
+      categorias: categorias.filter(c => c).sort()
+    });
+    
+  } catch (error) {
+    console.error('❌ [METADATOS] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al obtener metadatos',
+      details: error.message
+    });
+  }
+});
+
 // ===== ENDPOINT MODIFICADO: /exportar-excel CON FILTROS =====
 // Reemplazar desde la línea 2739 hasta 3061 en productos.js
 
