@@ -53,7 +53,7 @@ const GRUPOS_CATEGORIAS = {
     "Gas Spring Stabilus", "Otros"
   ],
   "frenos-embrague": [
-    "Cilindros de Rueda y Componentes", "Bombas de Freno", "Bombas de Embrague",
+    "Cilindros de Rueda y Componentes","LPR", "Bombas de Freno", "Bombas de Embrague",
     "Bombines de Embrague", "Mordazas y Pistones", "Kits de Reparación Generales",
     "Flexibles de Freno", "Válvulas Hidráulicas", "Purga y Depósitos",
     "Bombas de vacío", "Guardapolvos y Sellos", "Varios", "Pistones Servo Freno"
@@ -178,6 +178,7 @@ const CATEGORIAS = {
     "GUARDAPOLVO FUELLE",
     "SELLOS"
   ],
+  "LPR": ["LPR"],
   "Varios": [
     "VARIOS"
   ],
@@ -211,6 +212,7 @@ const CATEGORIAS = {
     "Moldura de rejilla parrilla",
     "Moldura de capot"
   ]
+
 };
 
 
@@ -2734,17 +2736,48 @@ function procesarProductoConSEO(producto) {
     datos_estructurados: datosEstructurados
   };
 }
+// ===== ENDPOINT MODIFICADO: /exportar-excel CON FILTROS =====
+// Reemplazar desde la línea 2739 hasta 3061 en productos.js
+
 router.get('/exportar-excel', async (req, res) => {
   try {
     console.log('📊 [EXCEL] Iniciando exportación optimizada...');
+    
+    // 🆕 LEER PARÁMETROS DE FILTRADO
+    const { proveedores, categorias } = req.query;
     
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
-    // 🆕 CONTAR TOTAL DE PRODUCTOS PRIMERO
-    const totalProductos = await collection.countDocuments({ tiene_precio_valido: true });
+    // 🆕 CONSTRUIR QUERY CON FILTROS
+    let query = { tiene_precio_valido: true };
+    
+    // Filtro de proveedores
+    if (proveedores) {
+      const listaProveedores = proveedores.split(',').map(p => p.trim());
+      query.proveedor = { $in: listaProveedores };
+      console.log(`🔍 [EXCEL] Filtrando por proveedores: ${listaProveedores.join(', ')}`);
+    }
+    
+    // Filtro de categorías
+    if (categorias) {
+      const listaCategorias = categorias.split(',').map(c => c.trim());
+      query.categoria = { $in: listaCategorias };
+      console.log(`🔍 [EXCEL] Filtrando por categorías: ${listaCategorias.join(', ')}`);
+    }
+
+    // 🆕 CONTAR TOTAL DE PRODUCTOS CON FILTROS
+    const totalProductos = await collection.countDocuments(query);
     console.log(`📦 [EXCEL] Total de productos a procesar: ${totalProductos}`);
+    
+    // Si no hay productos que cumplan los filtros
+    if (totalProductos === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'No se encontraron productos con los filtros seleccionados'
+      });
+    }
 
     // 2️⃣ CREAR LIBRO DE EXCEL
     const workbook = new ExcelJS.Workbook();
@@ -2779,11 +2812,12 @@ router.get('/exportar-excel', async (req, res) => {
     }
 
     // 3️⃣ AGRUPAR POR PROVEEDOR (USANDO CURSOR PARA NO CARGAR TODO EN MEMORIA)
-    const proveedores = await collection.distinct('proveedor', { tiene_precio_valido: true });
-    console.log(`🏢 [EXCEL] ${proveedores.length} proveedores encontrados`);
+    // 🆕 Usar el query con filtros
+    const proveedoresEncontrados = await collection.distinct('proveedor', query);
+    console.log(`🏢 [EXCEL] ${proveedoresEncontrados.length} proveedores encontrados`);
 
     // 4️⃣ PROCESAR UN PROVEEDOR A LA VEZ
-    for (const proveedor of proveedores.sort()) {
+    for (const proveedor of proveedoresEncontrados.sort()) {
       const nombreProveedor = proveedor || 'Sin Proveedor';
       console.log(`\n📄 [EXCEL] Procesando: ${nombreProveedor}`);
 
@@ -2856,10 +2890,13 @@ router.get('/exportar-excel', async (req, res) => {
       filaActual++;
 
       // 🆕 OBTENER MARCAS PARA ESTE PROVEEDOR (SIN CARGAR PRODUCTOS)
-      const marcas = await collection.distinct('aplicaciones.marca', {
-        tiene_precio_valido: true,
+      // Aplicar filtros también aquí
+      const queryMarcas = {
+        ...query,
         proveedor: nombreProveedor
-      });
+      };
+      
+      const marcas = await collection.distinct('aplicaciones.marca', queryMarcas);
 
       console.log(`  🚗 ${marcas.length} marcas en este proveedor`);
 
@@ -2885,12 +2922,15 @@ router.get('/exportar-excel', async (req, res) => {
         filaActual++;
 
         // 🆕 OBTENER PRODUCTOS DE ESTA MARCA (CURSOR PARA LIBERAR MEMORIA)
+        // Aplicar todos los filtros
+        const queryProductos = {
+          ...query,
+          proveedor: nombreProveedor,
+          'aplicaciones.marca': marca
+        };
+        
         const cursor = collection.find(
-          {
-            tiene_precio_valido: true,
-            proveedor: nombreProveedor,
-            'aplicaciones.marca': marca
-          },
+          queryProductos,
           {
             projection: {
               _id: 0,
@@ -3037,7 +3077,16 @@ router.get('/exportar-excel', async (req, res) => {
     const buffer = await workbook.xlsx.writeBuffer();
     
     const timestamp = new Date().toISOString().split('T')[0];
-    const nombreArchivo = `productos_bethersa_${timestamp}.xlsx`;
+    
+    // 🆕 Nombre de archivo personalizado según filtros
+    let nombreArchivo = `productos_bethersa_${timestamp}`;
+    if (proveedores) {
+      nombreArchivo += `_${proveedores.split(',').join('-')}`;
+    }
+    if (categorias) {
+      nombreArchivo += `_${categorias.split(',').slice(0, 2).join('-')}`;
+    }
+    nombreArchivo += '.xlsx';
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
@@ -3057,4 +3106,5 @@ router.get('/exportar-excel', async (req, res) => {
     });
   }
 });
+
 module.exports = router;
