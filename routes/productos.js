@@ -18,7 +18,7 @@ async function connectToMongoDB() {
   }
 
   console.log('🔌 [MONGODB] Creando nueva conexión...');
-  
+
   const client = new MongoClient(MONGODB_URI, {
     maxPoolSize: 10,
     serverSelectionTimeoutMS: 5000,
@@ -53,7 +53,7 @@ const GRUPOS_CATEGORIAS = {
     "Gas Spring Stabilus", "Otros"
   ],
   "frenos-embrague": [
-    "Cilindros de Rueda y Componentes","LPR", "Bombas de Freno", "Bombas de Embrague",
+    "Cilindros de Rueda y Componentes", "LPR", "Bombas de Freno", "Bombas de Embrague",
     "Bombines de Embrague", "Mordazas y Pistones", "Kits de Reparación Generales",
     "Flexibles de Freno", "Válvulas Hidráulicas", "Purga y Depósitos",
     "Bombas de vacío", "Guardapolvos y Sellos", "Varios", "Pistones Servo Freno"
@@ -75,10 +75,10 @@ function getCategoriasPorGrupo(grupo) {
   if (!grupo || !GRUPOS_CATEGORIAS[grupo]) {
     return null;
   }
-  
+
   const categoriasGrupo = GRUPOS_CATEGORIAS[grupo];
   const subcategoriasGrupo = [];
-  
+
   // Extraer todas las subcategorías del grupo
   categoriasGrupo.forEach(categoria => {
     if (CATEGORIAS[categoria]) {
@@ -88,7 +88,7 @@ function getCategoriasPorGrupo(grupo) {
       subcategoriasGrupo.push(categoria);
     }
   });
-  
+
   return subcategoriasGrupo;
 }
 const CATEGORIAS = {
@@ -99,7 +99,7 @@ const CATEGORIAS = {
   ],
   "Barras": ["Barras HD SADAR"],
   "Bieletas": ["Bieletas CORVEN", "Bieletas SADAR"],
-  "Brazos Suspension": ["Brazos Susp CORVEN","Brazos Susp SADAR",],
+  "Brazos Suspension": ["Brazos Susp CORVEN", "Brazos Susp SADAR",],
   "Cazoletas": ["Cazoletas CORVEN", "Cazoletas SADAR"],
   "Discos y Campanas": ["Discos y Camp HF", "Discos y Camp CORVEN"],
   "Extremos": ["Extremos CORVEN", "Extremos SADAR"],
@@ -268,16 +268,16 @@ function getValidCategoriesForProduct(product) {
     'porton': ['Portón Trasero'],
     'moldura': ['Molduras']
   };
-  
+
   const normalizedProduct = normalizeText(product).replace(/s$/, '');
   return categoryMap[normalizedProduct] || [];
 }
 function mapPositionForSearch(position) {
   const positionMap = {
-      'delantero': 'Delantero', 'del': 'Delantero',
-      'trasero': 'Trasero', 'pos': 'Trasero',
-      'izquierdo': 'Izquierdo', 'izq': 'Izquierdo',
-      'derecho': 'Derecho', 'der': 'Derecho'
+    'delantero': 'Delantero', 'del': 'Delantero',
+    'trasero': 'Trasero', 'pos': 'Trasero',
+    'izquierdo': 'Izquierdo', 'izq': 'Izquierdo',
+    'derecho': 'Derecho', 'der': 'Derecho'
   };
   const normalizedPosition = normalizeText(position);
   return positionMap[normalizedPosition] || position;
@@ -285,13 +285,13 @@ function mapPositionForSearch(position) {
 
 function parseNaturalQuery(query) {
   console.log('🧠 [PARSER] Analizando:', query);
-  
+
   const STOP_WORDS = ['para', 'de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'con', 'mi', 'auto'];
   const productKeywords = [
-    'amortiguador', 'pastilla', 'freno', 'disco', 'cazoleta', 'bieleta', 
+    'amortiguador', 'pastilla', 'freno', 'disco', 'cazoleta', 'bieleta',
     'rotula', 'embrague', 'brazo', 'extremo', 'axial', 'homocinetica',
-    'cilindro', 'piston', 'bomba', 'cubeta', 'guardapolvo', 'bombin', 
-    'mordaza', 'kit', 'flexible', 'valvula', 'asiento', 'cuerpo', 
+    'cilindro', 'piston', 'bomba', 'cubeta', 'guardapolvo', 'bombin',
+    'mordaza', 'kit', 'flexible', 'valvula', 'asiento', 'cuerpo',
     'purgador', 'deposito', 'servo', 'sello',
     'parrilla', 'cremallera', 'maza', 'semieje',
     // 🆕 PALABRAS CLAVE DE CARROCERÍA Y CHAPA
@@ -299,20 +299,20 @@ function parseNaturalQuery(query) {
     'capot', 'pasarueda', 'porton', 'moldura'
   ];
   const positionKeywords = ['delantero', 'trasero', 'izquierdo', 'derecho', 'del', 'pos', 'izq', 'der'];
-  
+
   // 🆕 DETECCIÓN DE FILTROS FORMATEADOS
   const filterPattern = /(categoria|marca|modelo|version):"([^"]+)"/g;
   const filterMatches = [...query.matchAll(filterPattern)];
-  
+
   if (filterMatches.length > 0) {
     console.log('🎯 [PARSER] Filtros detectados en query:', filterMatches);
-    
+
     const extractedFilters = {};
     filterMatches.forEach(match => {
       const [, filterType, filterValue] = match;
       extractedFilters[filterType] = filterValue;
     });
-    
+
     return {
       product: null,
       position: null,
@@ -326,64 +326,64 @@ function parseNaturalQuery(query) {
       freeText: query.replace(filterPattern, '').trim()
     };
   }
-  
+
   // 🆕 DETECCIÓN DE CÓDIGO EXACTO
   const trimmedQuery = query.trim();
   const isLikelyCode = /^[A-Za-z0-9\-_]+$/.test(trimmedQuery) && trimmedQuery.length >= 3;
-  
+
   const normalized = normalizeText(query);
   const words = normalized.split(' ').filter(word => !STOP_WORDS.includes(word) && word.length > 1);
-  
-  const result = { 
-    product: null, 
-    position: null, 
-    year: null, 
-    vehicleTerms: [], 
+
+  const result = {
+    product: null,
+    position: null,
+    year: null,
+    vehicleTerms: [],
     isStructured: false,
     // 🆕 NUEVAS PROPIEDADES PARA CÓDIGO
     isExactCode: isLikelyCode,
     exactCode: isLikelyCode ? trimmedQuery : null,
     isFilterQuery: false,
     extractedFilters: null,
-    freeText: query 
+    freeText: query
   };
 
   const remainingWords = [];
   for (const word of words) {
-      if (!result.product && productKeywords.includes(word.replace(/s$/, ''))) {
-          result.product = word.replace(/s$/, '');
-      } else if (!result.position && positionKeywords.includes(word)) {
-          result.position = word;
-      } else if (!result.year && /^\d{4}$/.test(word)) {
-          result.year = word;
-      } else if (!result.year && /^\d{2}$/.test(word)) {
-          const yearNum = parseInt(word, 10);
-          result.year = yearNum > 30 ? (1900 + yearNum).toString() : (2000 + yearNum).toString();
-      } else {
-          remainingWords.push(word);
-      }
+    if (!result.product && productKeywords.includes(word.replace(/s$/, ''))) {
+      result.product = word.replace(/s$/, '');
+    } else if (!result.position && positionKeywords.includes(word)) {
+      result.position = word;
+    } else if (!result.year && /^\d{4}$/.test(word)) {
+      result.year = word;
+    } else if (!result.year && /^\d{2}$/.test(word)) {
+      const yearNum = parseInt(word, 10);
+      result.year = yearNum > 30 ? (1900 + yearNum).toString() : (2000 + yearNum).toString();
+    } else {
+      remainingWords.push(word);
+    }
   }
 
   result.vehicleTerms = remainingWords;
   if (result.product || result.position || result.year || result.vehicleTerms.length > 0) {
-      result.isStructured = true;
+    result.isStructured = true;
   }
-  
+
   console.log('🧠 [PARSER] Resultado:', result);
   return result;
 }
 
 function buildSearchPipeline(parsedQuery, limit, offset) {
   console.log('🔧 [PIPELINE] Construyendo búsqueda...');
-  
+
   let matchConditions = { tiene_precio_valido: true };
-  
+
   // 🆕 PRIORIDAD PARA QUERIES CON FILTROS EXTRAÍDOS
   if (parsedQuery.isFilterQuery && parsedQuery.extractedFilters) {
     console.log('🎯 [PIPELINE] Búsqueda con filtros extraídos:', parsedQuery.extractedFilters);
-    
+
     const filters = parsedQuery.extractedFilters;
-    
+
     // Filtro por categoría principal
     if (filters.categoria) {
       if (CATEGORIAS[filters.categoria]) {
@@ -392,22 +392,22 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
         matchConditions.categoria = filters.categoria;
       }
     }
-    
+
     // Filtros de aplicaciones
     const aplicacionFilters = [];
-    
+
     if (filters.marca) {
       aplicacionFilters.push({ "aplicaciones.marca": filters.marca });
     }
-    
+
     if (filters.modelo) {
       aplicacionFilters.push({ "aplicaciones.modelo": filters.modelo });
     }
-    
+
     if (filters.version) {
       aplicacionFilters.push({ "aplicaciones.version": filters.version });
     }
-    
+
     // Si hay filtros de aplicación, usar $elemMatch
     if (aplicacionFilters.length > 0) {
       matchConditions.aplicaciones = {
@@ -419,7 +419,7 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
         }
       };
     }
-    
+
     const pipeline = [
       { $match: matchConditions },
       { $sort: { codigo: 1 } }
@@ -431,11 +431,11 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
 
     return pipeline;
   }
-  
+
   // 🆕 PRIORIDAD PARA CÓDIGOS EXACTOS
   if (parsedQuery.isExactCode) {
     console.log('🔍 [PIPELINE] Búsqueda por código exacto:', parsedQuery.exactCode);
-    
+
     matchConditions = {
       tiene_precio_valido: true,
       $or: [
@@ -444,7 +444,7 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
         { nombre: { $regex: parsedQuery.exactCode, $options: 'i' } }
       ]
     };
-    
+
     const pipeline = [
       { $match: matchConditions },
       {
@@ -466,11 +466,11 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     pipeline.push({ $limit: limit });
     return pipeline;
   }
-  
+
   // RESTO DE LA LÓGICA ORIGINAL SIN CAMBIOS
   if (parsedQuery.isStructured) {
     console.log('🎯 [PIPELINE] Búsqueda estructurada');
-    
+
     // Producto/Categoría
     if (parsedQuery.product) {
       const validCategories = getValidCategoriesForProduct(parsedQuery.product);
@@ -478,46 +478,46 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
         matchConditions.categoria = { $in: validCategories };
       }
     }
-    
+
     // Posición
     if (parsedQuery.position) {
       const mappedPosition = mapPositionForSearch(parsedQuery.position);
       matchConditions["detalles_tecnicos.Posición de la pieza"] = { $regex: mappedPosition, $options: 'i' };
     }
-    
+
     // Aplicaciones de vehículo
     const elemMatchAndConditions = [];
-    
+
     if (parsedQuery.vehicleTerms && parsedQuery.vehicleTerms.length > 0) {
       const vehicleConditions = parsedQuery.vehicleTerms.map(term => ({
         $or: [
-          { "marca": { $regex: term, $options: 'i' } }, 
+          { "marca": { $regex: term, $options: 'i' } },
           { "modelo": { $regex: term, $options: 'i' } }
         ]
       }));
       elemMatchAndConditions.push(...vehicleConditions);
     }
-    
+
     // Año
     if (parsedQuery.year) {
       const yearRegex = `(${parsedQuery.year}|${parsedQuery.year.slice(-2)})`;
-      elemMatchAndConditions.push({ 
-        'version': { $regex: yearRegex, $options: 'i' } 
+      elemMatchAndConditions.push({
+        'version': { $regex: yearRegex, $options: 'i' }
       });
     }
-    
+
     if (elemMatchAndConditions.length > 0) {
-      matchConditions.aplicaciones = { 
-        $elemMatch: { $and: elemMatchAndConditions } 
+      matchConditions.aplicaciones = {
+        $elemMatch: { $and: elemMatchAndConditions }
       };
     }
-    
+
   } else {
     console.log('🔍 [PIPELINE] Búsqueda libre');
-    
+
     const freeText = parsedQuery.freeText || "";
     const keywords = normalizeText(freeText).split(' ').filter(k => k.length > 0);
-    
+
     if (keywords.length > 0) {
       matchConditions.$and = keywords.map(word => ({
         $or: [
@@ -531,7 +531,7 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
   }
 
   console.log('🚨 [PIPELINE] Consulta final:', JSON.stringify(matchConditions, null, 2));
-  
+
   const pipeline = [
     { $match: matchConditions },
     { $sort: { codigo: 1 } }
@@ -552,7 +552,7 @@ router.get('/ping', async (req, res) => {
     const db = client.db(DB_NAME);
     await db.command({ ping: 1 });
     const count = await db.collection(COLLECTION_NAME).countDocuments();
-    
+
     res.json({
       success: true,
       message: 'MongoDB conectado exitosamente',
@@ -569,9 +569,9 @@ router.get('/ping', async (req, res) => {
 
 router.get('/metadatos', async (req, res) => {
   try {
-    const { 
+    const {
       pagina = null,
-      limite = null, 
+      limite = null,
       categoria = null,
       grupo = null,  // 🆕 AGREGAR PARÁMETRO GRUPO
       solo_conteo = false
@@ -597,11 +597,11 @@ router.get('/metadatos', async (req, res) => {
 
     // Filtros base
     let matchConditions = { tiene_precio_valido: true };
-    
+
     // 🆕 MANEJO DEL PARÁMETRO GRUPO
     if (grupo && grupo !== 'todos') {
       const categoriasGrupo = getCategoriasPorGrupo(grupo);
-      
+
       if (categoriasGrupo) {
         console.log(`📦 [METADATOS] Filtrando por grupo: ${grupo}, categorías: ${categoriasGrupo.length}`);
         matchConditions.categoria = { $in: categoriasGrupo };
@@ -623,9 +623,9 @@ router.get('/metadatos', async (req, res) => {
     }
 
     const esPaginado = pagina !== null && limite !== null;
-    
+
     console.log(`📦 [METADATOS] Solicitud ${esPaginado ? 'PAGINADA' : 'COMPLETA'}`);
-    
+
     if (esPaginado) {
       // 📄 MODO PAGINADO - Para carga inicial de 9 productos
       const pipeline = [
@@ -636,8 +636,8 @@ router.get('/metadatos', async (req, res) => {
             productos: [
               { $skip: (parseInt(pagina) - 1) * parseInt(limite) },
               { $limit: parseInt(limite) },
-              { 
-                $project: { 
+              {
+                $project: {
                   _id: 0,
                   codigo: 1,
                   nombre: 1,
@@ -647,7 +647,7 @@ router.get('/metadatos', async (req, res) => {
                   precio_numerico: 1,
                   tiene_precio_valido: 1,
                   // 🆕 USAR PRIMERA IMAGEN DEL ARRAY
-                  imagen: { 
+                  imagen: {
                     $cond: {
                       if: { $isArray: "$imagenes" },
                       then: { $arrayElemAt: ["$imagenes", 0] },
@@ -659,7 +659,7 @@ router.get('/metadatos', async (req, res) => {
                   aplicaciones: { $slice: ["$aplicaciones", 2] },
                   "detalles_tecnicos.Posición de la pieza": "$detalles_tecnicos.Posición de la pieza",
                   stock_status: 1
-                } 
+                }
               }
             ],
             totalCount: [
@@ -696,12 +696,12 @@ router.get('/metadatos', async (req, res) => {
     } else {
       // 🚀 MODO COMPLETO - Todos los productos de una vez
       console.log(`🔥 [METADATOS-COMPLETO] Cargando TODOS los productos...`);
-      
+
       const pipeline = [
         { $match: matchConditions },
         { $sort: { codigo: 1 } },
-        { 
-          $project: { 
+        {
+          $project: {
             _id: 0,
             codigo: 1,
             nombre: 1,
@@ -711,7 +711,7 @@ router.get('/metadatos', async (req, res) => {
             precio_numerico: 1,
             tiene_precio_valido: 1,
             // 🆕 USAR PRIMERA IMAGEN DEL ARRAY
-            imagen: { 
+            imagen: {
               $cond: {
                 if: { $isArray: "$imagenes" },
                 then: { $arrayElemAt: ["$imagenes", 0] },
@@ -724,7 +724,7 @@ router.get('/metadatos', async (req, res) => {
             detalles_tecnicos: 1,
             equivalencias: 1,
             stock_status: 1
-          } 
+          }
         }
       ];
 
@@ -759,17 +759,17 @@ router.get('/metadatos', async (req, res) => {
 router.get('/filtros-rapidos', async (req, res) => {
   try {
     const { categoria = null, grupo = null } = req.query;  // 🆕 AGREGAR PARÁMETRO GRUPO
-    
+
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
     let matchConditions = { tiene_precio_valido: true };
-    
+
     // 🆕 MANEJO DEL PARÁMETRO GRUPO
     if (grupo && grupo !== 'todos') {
       const categoriasGrupo = getCategoriasPorGrupo(grupo);
-      
+
       if (categoriasGrupo) {
         console.log(`🔍 [FILTROS-RAPIDOS] Filtrando por grupo: ${grupo}, categorías: ${categoriasGrupo.length}`);
         matchConditions.categoria = { $in: categoriasGrupo };
@@ -839,7 +839,7 @@ router.get('/producto-completo/:codigo', async (req, res) => {
     // Cargar producto con TODOS los detalles
     const producto = await collection.findOne(
       { codigo: codigo },
-      { 
+      {
         projection: { _id: 0 } // Todos los campos
       }
     );
@@ -866,7 +866,7 @@ router.get('/producto-completo/:codigo', async (req, res) => {
 router.post('/busqueda-codigos-lote', async (req, res) => {
   try {
     const { codigos } = req.body;
-    
+
     if (!codigos || !Array.isArray(codigos) || codigos.length === 0) {
       return res.status(400).json({
         success: false,
@@ -896,11 +896,11 @@ router.post('/busqueda-codigos-lote', async (req, res) => {
 
     // Buscar todos los productos en una sola consulta
     const startTime = Date.now();
-    
+
     const productos = await collection.find(
-      { 
+      {
         codigo: { $in: codigosLimpios },
-        tiene_precio_valido: true 
+        tiene_precio_valido: true
       },
       {
         projection: {
@@ -920,12 +920,12 @@ router.post('/busqueda-codigos-lote', async (req, res) => {
 
     // Crear mapa de códigos encontrados vs no encontrados
     const productosEncontrados = productos.map(p => p.codigo);
-    const codigosNoEncontrados = codigosLimpios.filter(codigo => 
+    const codigosNoEncontrados = codigosLimpios.filter(codigo =>
       !productosEncontrados.includes(codigo)
     );
 
     console.log(`✅ [BUSQUEDA-LOTE] ${productos.length}/${codigosLimpios.length} productos encontrados en ${processingTime}ms`);
-    
+
     if (codigosNoEncontrados.length > 0) {
       console.log(`⚠️ [BUSQUEDA-LOTE] Códigos no encontrados:`, codigosNoEncontrados.slice(0, 10));
     }
@@ -956,7 +956,7 @@ router.post('/busqueda-codigos-lote', async (req, res) => {
 router.post('/verificar-codigos-existencia', async (req, res) => {
   try {
     const { codigos } = req.body;
-    
+
     if (!codigos || !Array.isArray(codigos)) {
       return res.status(400).json({
         success: false,
@@ -976,15 +976,15 @@ router.post('/verificar-codigos-existencia', async (req, res) => {
 
     // Solo verificar existencia (más rápido)
     const productosExistentes = await collection.find(
-      { 
+      {
         codigo: { $in: codigosLimpios },
-        tiene_precio_valido: true 
+        tiene_precio_valido: true
       },
       { projection: { codigo: 1, _id: 0 } }
     ).toArray();
 
     const codigosExistentes = productosExistentes.map(p => p.codigo);
-    const codigosNoExistentes = codigosLimpios.filter(codigo => 
+    const codigosNoExistentes = codigosLimpios.filter(codigo =>
       !codigosExistentes.includes(codigo)
     );
 
@@ -1012,7 +1012,7 @@ router.post('/verificar-codigos-existencia', async (req, res) => {
 router.get('/producto-rapido/:codigo', async (req, res) => {
   try {
     const { codigo } = req.params;
-    
+
     if (!codigo || codigo.trim().length === 0) {
       return res.status(400).json({
         success: false,
@@ -1025,9 +1025,9 @@ router.get('/producto-rapido/:codigo', async (req, res) => {
     const collection = db.collection(COLLECTION_NAME);
 
     const producto = await collection.findOne(
-      { 
+      {
         codigo: codigo.trim(),
-        tiene_precio_valido: true 
+        tiene_precio_valido: true
       },
       {
         projection: {
@@ -1088,11 +1088,11 @@ router.get('/busqueda', async (req, res) => {
 
     // Construir pipeline
     const pipeline = buildSearchPipeline(parsedQuery, parseInt(limit), parseInt(offset));
-    
+
     // 🆕 AGREGAR PROYECCIÓN PARA MANEJAR IMÁGENES
     pipeline.push({
       $addFields: {
-        imagen: { 
+        imagen: {
           $cond: {
             if: { $isArray: "$imagenes" },
             then: { $arrayElemAt: ["$imagenes", 0] },
@@ -1101,7 +1101,7 @@ router.get('/busqueda', async (req, res) => {
         }
       }
     });
-    
+
     // Ejecutar búsqueda
     const startTime = Date.now();
     const results = await collection.aggregate(pipeline).toArray();
@@ -1196,23 +1196,27 @@ router.get('/sugerencias', async (req, res) => {
       { codigo: { $regex: normalizedQuery, $options: 'i' } },
       { projection: { codigo: 1, _id: 0 }, limit: 3 }
     ).toArray();
-    
+
     codigoMatches.forEach(p => suggestions.add(p.codigo));
 
     // Sugerencias de marcas y modelos
     const vehicleMatches = await collection.aggregate([
       { $unwind: "$aplicaciones" },
-      { $match: { 
-        $or: [
-          { "aplicaciones.marca": { $regex: normalizedQuery, $options: 'i' } },
-          { "aplicaciones.modelo": { $regex: normalizedQuery, $options: 'i' } }
-        ]
-      }},
-      { $group: { 
-        _id: null, 
-        marcas: { $addToSet: "$aplicaciones.marca" },
-        modelos: { $addToSet: "$aplicaciones.modelo" }
-      }},
+      {
+        $match: {
+          $or: [
+            { "aplicaciones.marca": { $regex: normalizedQuery, $options: 'i' } },
+            { "aplicaciones.modelo": { $regex: normalizedQuery, $options: 'i' } }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          marcas: { $addToSet: "$aplicaciones.marca" },
+          modelos: { $addToSet: "$aplicaciones.modelo" }
+        }
+      },
       { $limit: 1 }
     ]).toArray();
 
@@ -1276,7 +1280,7 @@ router.get('/categorias', async (req, res) => {
 router.get('/categoria/:categoria', async (req, res) => {
   try {
     const { categoria } = req.params;
-    
+
     // Mapear categorías URL-friendly a categorías reales
     const mapeoCategories = {
       'amortiguadores': 'Amortiguadores',
@@ -1300,7 +1304,7 @@ router.get('/categoria/:categoria', async (req, res) => {
 
     // Obtener productos de la categoría
     let matchConditions = { tiene_precio_valido: true };
-    
+
     if (CATEGORIAS[categoriaReal]) {
       matchConditions.categoria = { $in: CATEGORIAS[categoriaReal] };
     } else {
@@ -1358,8 +1362,8 @@ router.get('/categoria/:categoria', async (req, res) => {
 
     <div class="productos-grid">
         ${productos.map(producto => {
-          const productoConSEO = procesarProductoConSEO(producto);
-          return `
+      const productoConSEO = procesarProductoConSEO(producto);
+      return `
             <div class="producto-card">
                 <h3>${productoConSEO.nombre_descriptivo}</h3>
                 <p><strong>Código:</strong> ${producto.codigo}</p>
@@ -1373,7 +1377,7 @@ router.get('/categoria/:categoria', async (req, res) => {
                 <a href="/producto?id=${producto.codigo}" style="color: #e63946;">Ver detalles</a>
             </div>
           `;
-        }).join('')}
+    }).join('')}
     </div>
 
     <div class="cta-section">
@@ -1534,14 +1538,14 @@ function generarContenidoCategoriaSEO(categoria, productos) {
 router.get('/marcas', async (req, res) => {
   try {
     const { categoria } = req.query;
-    
+
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
     // Construir filtro base
     let matchConditions = { tiene_precio_valido: true };
-    
+
     // Filtrar por categoría si se especifica
     if (categoria && categoria !== 'todos') {
       if (CATEGORIAS[categoria]) {
@@ -1555,20 +1559,20 @@ router.get('/marcas', async (req, res) => {
     const pipeline = [
       { $match: matchConditions },
       { $unwind: "$aplicaciones" },
-      { 
-        $group: { 
-          _id: null, 
-          marcas: { $addToSet: "$aplicaciones.marca" } 
-        } 
+      {
+        $group: {
+          _id: null,
+          marcas: { $addToSet: "$aplicaciones.marca" }
+        }
       },
       {
         $project: {
           _id: 0,
-          marcas: { 
-            $sortArray: { 
-              input: { $filter: { input: "$marcas", cond: { $ne: ["$$this", null] } } }, 
-              sortBy: 1 
-            } 
+          marcas: {
+            $sortArray: {
+              input: { $filter: { input: "$marcas", cond: { $ne: ["$$this", null] } } },
+              sortBy: 1
+            }
           }
         }
       }
@@ -1600,7 +1604,7 @@ router.get('/marcas', async (req, res) => {
 router.get('/modelos', async (req, res) => {
   try {
     const { categoria, marca } = req.query;
-    
+
     if (!marca) {
       return res.status(400).json({
         success: false,
@@ -1614,7 +1618,7 @@ router.get('/modelos', async (req, res) => {
 
     // Construir filtro base
     let matchConditions = { tiene_precio_valido: true };
-    
+
     // Filtrar por categoría si se especifica
     if (categoria && categoria !== 'todos') {
       if (CATEGORIAS[categoria]) {
@@ -1628,25 +1632,25 @@ router.get('/modelos', async (req, res) => {
     const pipeline = [
       { $match: matchConditions },
       { $unwind: "$aplicaciones" },
-      { 
-        $match: { 
-          "aplicaciones.marca": marca 
-        } 
+      {
+        $match: {
+          "aplicaciones.marca": marca
+        }
       },
-      { 
-        $group: { 
-          _id: null, 
-          modelos: { $addToSet: "$aplicaciones.modelo" } 
-        } 
+      {
+        $group: {
+          _id: null,
+          modelos: { $addToSet: "$aplicaciones.modelo" }
+        }
       },
       {
         $project: {
           _id: 0,
-          modelos: { 
-            $sortArray: { 
-              input: { $filter: { input: "$modelos", cond: { $ne: ["$$this", null] } } }, 
-              sortBy: 1 
-            } 
+          modelos: {
+            $sortArray: {
+              input: { $filter: { input: "$modelos", cond: { $ne: ["$$this", null] } } },
+              sortBy: 1
+            }
           }
         }
       }
@@ -1678,7 +1682,7 @@ router.get('/modelos', async (req, res) => {
 router.get('/versiones', async (req, res) => {
   try {
     const { categoria, marca, modelo } = req.query;
-    
+
     if (!marca || !modelo) {
       return res.status(400).json({
         success: false,
@@ -1692,7 +1696,7 @@ router.get('/versiones', async (req, res) => {
 
     // Construir filtro base
     let matchConditions = { tiene_precio_valido: true };
-    
+
     // Filtrar por categoría si se especifica
     if (categoria && categoria !== 'todos') {
       if (CATEGORIAS[categoria]) {
@@ -1706,26 +1710,26 @@ router.get('/versiones', async (req, res) => {
     const pipeline = [
       { $match: matchConditions },
       { $unwind: "$aplicaciones" },
-      { 
-        $match: { 
+      {
+        $match: {
           "aplicaciones.marca": marca,
           "aplicaciones.modelo": modelo
-        } 
+        }
       },
-      { 
-        $group: { 
-          _id: null, 
-          versiones: { $addToSet: "$aplicaciones.version" } 
-        } 
+      {
+        $group: {
+          _id: null,
+          versiones: { $addToSet: "$aplicaciones.version" }
+        }
       },
       {
         $project: {
           _id: 0,
-          versiones: { 
-            $sortArray: { 
-              input: { $filter: { input: "$versiones", cond: { $ne: ["$this", null] } } }, 
-              sortBy: 1 
-            } 
+          versiones: {
+            $sortArray: {
+              input: { $filter: { input: "$versiones", cond: { $ne: ["$this", null] } } },
+              sortBy: 1
+            }
           }
         }
       }
@@ -1755,13 +1759,13 @@ router.get('/versiones', async (req, res) => {
 
 router.get('/busqueda-filtrada', async (req, res) => {
   try {
-    const { 
-      categoria, 
-      marca, 
-      modelo, 
-      version, 
-      limit = 20, 
-      offset = 0 
+    const {
+      categoria,
+      marca,
+      modelo,
+      version,
+      limit = 20,
+      offset = 0
     } = req.query;
 
     // Validar que al menos un filtro esté presente
@@ -1787,7 +1791,7 @@ router.get('/busqueda-filtrada', async (req, res) => {
       if (CATEGORIAS[categoria]) {
         console.log(`🎯 Categoría principal: ${categoria}`);
         console.log(`📋 Buscando en subcategorías:`, CATEGORIAS[categoria]);
-        
+
         // Buscar en todas las subcategorías que pertenecen a esta categoría principal
         matchConditions.categoria = { $in: CATEGORIAS[categoria] };
       } else {
@@ -1807,15 +1811,15 @@ router.get('/busqueda-filtrada', async (req, res) => {
 
     // Filtros de aplicaciones (marca, modelo, versión)
     const aplicacionFilters = [];
-    
+
     if (marca) {
       aplicacionFilters.push({ "aplicaciones.marca": marca });
     }
-    
+
     if (modelo) {
       aplicacionFilters.push({ "aplicaciones.modelo": modelo });
     }
-    
+
     if (version) {
       aplicacionFilters.push({ "aplicaciones.version": version });
     }
@@ -1844,7 +1848,7 @@ router.get('/busqueda-filtrada', async (req, res) => {
     if (parseInt(offset) > 0) {
       pipeline.push({ $skip: parseInt(offset) });
     }
-    
+
     pipeline.push({ $limit: parseInt(limit) });
     pipeline.push({ $project: { _id: 0 } });
 
@@ -1858,12 +1862,12 @@ router.get('/busqueda-filtrada', async (req, res) => {
       { $match: matchConditions },
       { $count: "total" }
     ];
-    
+
     const countResult = await collection.aggregate(countPipeline).toArray();
     const totalResultados = countResult[0]?.total || 0;
 
     console.log(`✅ [BÚSQUEDA-FILTRADA] ${productos.length}/${totalResultados} productos encontrados en ${processingTime}ms`);
-    
+
     // Info adicional sobre la búsqueda
     const infoAdicional = {};
     if (categoria && CATEGORIAS[categoria]) {
@@ -1907,7 +1911,7 @@ router.get('/filtros-stats', async (req, res) => {
 
     // Construir filtro base
     let matchConditions = { tiene_precio_valido: true };
-    
+
     if (categoria && categoria !== 'todos') {
       if (CATEGORIAS[categoria]) {
         matchConditions.categoria = { $in: CATEGORIAS[categoria] };
@@ -1991,7 +1995,7 @@ router.get('/filtros-autocomplete', async (req, res) => {
 
     // Buscar en diferentes campos según el tipo
     const searchFields = [];
-    
+
     if (tipo === 'all' || tipo === 'marca') {
       searchFields.push('aplicaciones.marca');
     }
@@ -2007,10 +2011,10 @@ router.get('/filtros-autocomplete', async (req, res) => {
       const pipeline = [
         { $match: { tiene_precio_valido: true } },
         { $unwind: field.includes('aplicaciones') ? "$aplicaciones" : "$categoria" },
-        { 
-          $match: { 
-            [field]: { $regex: query, $options: 'i' } 
-          } 
+        {
+          $match: {
+            [field]: { $regex: query, $options: 'i' }
+          }
         },
         { $group: { _id: `${field}` } },
         { $limit: parseInt(limit) }
@@ -2048,7 +2052,7 @@ router.get('/filtros-autocomplete', async (req, res) => {
 router.get('/sitemap-productos.xml', async (req, res) => {
   try {
     console.log('🗺️ [SITEMAP] Generando sitemap completo...');
-    
+
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
@@ -2056,18 +2060,18 @@ router.get('/sitemap-productos.xml', async (req, res) => {
     // Obtener productos más populares/importantes (amortiguadores primero)
     const productos = await collection.find(
       { tiene_precio_valido: true },
-      { 
-        projection: { 
-          codigo: 1, 
+      {
+        projection: {
+          codigo: 1,
           categoria: 1,
           aplicaciones: 1,
           detalles_tecnicos: 1,
           marca: 1,
           convertido_timestamp: 1
-        } 
+        }
       }
     ).limit(1000) // Limitar para no sobrecargar el sitemap
-    .toArray();
+      .toArray();
 
     console.log(`🗺️ [SITEMAP] ${productos.length} productos procesando...`);
 
@@ -2111,14 +2115,14 @@ router.get('/sitemap-productos.xml', async (req, res) => {
     // Procesar amortiguadores primero (máxima prioridad)
     const categoriesAmortiguadores = Object.keys(productosPorCategoria)
       .filter(cat => cat.includes('Amort'));
-    
+
     categoriesAmortiguadores.forEach(categoria => {
       const productosCategoria = productosPorCategoria[categoria];
-      
+
       productosCategoria.forEach(producto => {
         const productoConSEO = procesarProductoConSEO(producto);
-        const lastmod = producto.convertido_timestamp ? 
-          new Date(producto.convertido_timestamp).toISOString().split('T')[0] : 
+        const lastmod = producto.convertido_timestamp ?
+          new Date(producto.convertido_timestamp).toISOString().split('T')[0] :
           fechaActual;
 
         // URL del producto individual
@@ -2155,10 +2159,10 @@ router.get('/sitemap-productos.xml', async (req, res) => {
 
     otrasCategories.forEach(categoria => {
       const productosCategoria = productosPorCategoria[categoria].slice(0, 20); // Máximo 20 por categoría
-      
+
       productosCategoria.forEach(producto => {
-        const lastmod = producto.convertido_timestamp ? 
-          new Date(producto.convertido_timestamp).toISOString().split('T')[0] : 
+        const lastmod = producto.convertido_timestamp ?
+          new Date(producto.convertido_timestamp).toISOString().split('T')[0] :
           fechaActual;
 
         xml += `
@@ -2213,14 +2217,14 @@ router.get('/sitemap-productos.xml', async (req, res) => {
   </url>`;
 
     xml += '\n</urlset>';
-    
+
     console.log(`✅ [SITEMAP] Sitemap generado con ${(xml.match(/<url>/g) || []).length} URLs`);
 
     res.set({
       'Content-Type': 'application/xml',
       'Cache-Control': 'public, max-age=3600', // Cache por 1 hora
     });
-    
+
     res.send(xml);
 
   } catch (error) {
@@ -2236,7 +2240,7 @@ router.get('/sitemap-productos.xml', async (req, res) => {
 router.get('/sitemap.xml', async (req, res) => {
   try {
     const fechaActual = new Date().toISOString().split('T')[0];
-    
+
     const sitemapIndex = `<?xml version="1.0" encoding="UTF-8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <sitemap>
@@ -2249,7 +2253,7 @@ router.get('/sitemap.xml', async (req, res) => {
       'Content-Type': 'application/xml',
       'Cache-Control': 'public, max-age=3600'
     });
-    
+
     res.send(sitemapIndex);
 
   } catch (error) {
@@ -2264,14 +2268,14 @@ router.get('/sitemap.xml', async (req, res) => {
 router.get('/producto-por-slug/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
-    
+
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
     // Buscar todos los productos y comparar slugs
     const productos = await collection.find({ tiene_precio_valido: true }).limit(500).toArray();
-    
+
     const producto = productos.find(p => {
       const slugGenerado = crearSlugSimple(p);
       return slugGenerado === slug;
@@ -2282,9 +2286,9 @@ router.get('/producto-por-slug/:slug', async (req, res) => {
     }
 
     const productoConSEO = procesarProductoConSEO(producto);
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       data: productoConSEO
     });
 
@@ -2296,7 +2300,7 @@ router.get('/producto-por-slug/:slug', async (req, res) => {
 // 🛠️ FUNCIÓN SIMPLE PARA CREAR SLUG
 function crearSlugSimple(producto) {
   const nombre = producto.nombre_descriptivo || producto.nombre || '';
-  
+
   return nombre
     .replace(/\s*-\s*[\w\d]+\.-[A-Z]+.*$/i, '') // Quitar código del final
     .replace(/\bpara\b/gi, '')                    // Quitar "para"
@@ -2315,13 +2319,13 @@ function crearSlugSimple(producto) {
 router.get('/generar-slug/:codigo', async (req, res) => {
   try {
     const { codigo } = req.params;
-    
+
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
     const producto = await collection.findOne({ codigo: codigo });
-    
+
     if (!producto) {
       return res.status(404).json({ success: false, error: 'Producto no encontrado' });
     }
@@ -2344,27 +2348,27 @@ router.get('/generar-slug/:codigo', async (req, res) => {
 });
 function generarNombreDescriptivo(producto) {
   // ✅ EXCEPCIÓN PARA MARROSE CON CTR O FTE
-  if ((producto.categoria === 'CTR' || 
-    producto.categoria === 'FTE' || 
-    producto.categoria === 'Susp Neumática SADAR') && 
+  if ((producto.categoria === 'CTR' ||
+    producto.categoria === 'FTE' ||
+    producto.categoria === 'Susp Neumática SADAR') &&
     producto.proveedor === 'Corven') {
     return producto.nombre || '';
   }
-  
+
   // ✅ EXCEPCIÓN 2: Productos de Marrose (cualquier categoría)
   if (producto.proveedor === 'Marrose') {
     return producto.nombre || '';
   }
-  
+
   // ✅ EXCEPCIÓN 3: Productos de Yokomitsu (cualquier categoría)
   if (producto.proveedor === 'Yokomitsu') {
     return producto.nombre || '';
   }
 
-  
+
   // Extraer categoría base (sin marca)
   const categoriaBase = producto.categoria?.replace(/^(Amort|Pastillas|Embragues|Discos y Camp|Rotulas|Brazos Susp)\s+\w+$/, '$1') || '';
-  
+
   // Mapear categorías a nombres más descriptivos
   const categoriasDescriptivas = {
     'Amort': 'Amortiguador',
@@ -2397,30 +2401,30 @@ function generarNombreDescriptivo(producto) {
     'Portón Trasero': 'Portón Trasero',
     'Molduras': 'Moldura'
   };
-  
+
   const categoriaDescriptiva = categoriasDescriptivas[categoriaBase] || categoriaBase;
-  
+
   // Obtener posición si existe
   const posicion = producto.detalles_tecnicos?.["Posición de la pieza"];
   const posicionTexto = posicion ? posicion.toLowerCase() : '';
-  
+
   // Formatear aplicaciones
   const aplicacionesTexto = formatearAplicaciones(producto.aplicaciones);
-  
+
   // Construir nombre descriptivo
   let nombreDescriptivo = categoriaDescriptiva;
-  
+
   if (posicionTexto) {
     nombreDescriptivo += ` ${posicionTexto}`;
   }
-  
+
   if (aplicacionesTexto) {
     nombreDescriptivo += ` para ${aplicacionesTexto}`;
   }
-  
+
   // Agregar código al final
   nombreDescriptivo += ` - ${producto.codigo}`;
-  
+
   return nombreDescriptivo;
 }
 
@@ -2432,23 +2436,23 @@ function generarNombreDescriptivo(producto) {
  */
 function formatearAplicaciones(aplicaciones) {
   if (!aplicaciones || aplicaciones.length === 0) return '';
-  
+
   // Agrupar por marca
   const porMarca = aplicaciones.reduce((acc, app) => {
     if (!acc[app.marca]) acc[app.marca] = [];
     acc[app.marca].push(app);
     return acc;
   }, {});
-  
+
   const textosFormateados = Object.entries(porMarca).map(([marca, apps]) => {
     // Agrupar modelos de la misma marca
     const modelos = apps.map(app => {
       let modelo = app.modelo;
-      
+
       // Interpretar versiones especiales
       if (app.version) {
         const version = app.version.toLowerCase();
-        
+
         // 🔧 FIX: Formato ../11 significa hasta 2011 (NO 1911)
         if (version.includes('../')) {
           const año = version.match(/(\d{2,4})/)?.[1];
@@ -2490,7 +2494,7 @@ function formatearAplicaciones(aplicaciones) {
         // 🔧 FIX: Rango de años 03/11 = 2003-2011 (NO 1903-1911)
         else if (version.match(/\d{2,4}\/\d{2,4}/)) {
           const [año1, año2] = version.match(/(\d{2,4})\/(\d{2,4})/).slice(1);
-          
+
           // ✅ FUNCIÓN PARA CONVERTIR AÑOS CORRECTAMENTE
           const convertirAño = (año) => {
             if (año.length === 2) {
@@ -2504,7 +2508,7 @@ function formatearAplicaciones(aplicaciones) {
             }
             return año; // Si ya tiene 4 dígitos, no cambiar
           };
-          
+
           const año1Completo = convertirAño(año1);
           const año2Completo = convertirAño(año2);
           modelo += ` (${año1Completo}-${año2Completo})`;
@@ -2514,13 +2518,13 @@ function formatearAplicaciones(aplicaciones) {
           modelo += ` ${app.version}`;
         }
       }
-      
+
       return modelo;
     });
-    
+
     return `${marca} ${modelos.join(', ')}`;
   });
-  
+
   return textosFormateados.join(' y ');
 }
 
@@ -2530,7 +2534,7 @@ function formatearAplicaciones(aplicaciones) {
 function generarTituloSEO(producto) {
   const nombreDescriptivo = generarNombreDescriptivo(producto);
   const marca = producto.marca || 'Repuesto';
-  
+
   return `${nombreDescriptivo} ${marca} | Repuestos Bethersa`;
 }
 
@@ -2540,13 +2544,13 @@ function generarTituloSEO(producto) {
 function generarDescripcionSEO(producto) {
   const nombreDescriptivo = generarNombreDescriptivo(producto);
   const aplicaciones = formatearAplicaciones(producto.aplicaciones);
-  
+
   let descripcion = `${nombreDescriptivo} de la marca ${producto.marca || 'original'}`;
-  
+
   if (aplicaciones) {
     descripcion += `. Compatible con ${aplicaciones}`;
   }
-  
+
   // Agregar detalles técnicos relevantes
   const detalles = [];
   if (producto.detalles_tecnicos) {
@@ -2557,13 +2561,13 @@ function generarDescripcionSEO(producto) {
       detalles.push(`Anclaje: ${producto.detalles_tecnicos["Anclaje Superior"]}`);
     }
   }
-  
+
   if (detalles.length > 0) {
     descripcion += `. ${detalles.join(', ')}`;
   }
-  
+
   descripcion += `. Código: ${producto.codigo}`;
-  
+
   // Truncar a 160 caracteres para SEO
   return descripcion.substring(0, 160);
 }
@@ -2573,15 +2577,15 @@ function generarDescripcionSEO(producto) {
  */
 function generarKeywords(producto) {
   const keywords = [];
-  
+
   // Categoría base
   const categoriaBase = producto.categoria?.replace(/^(Amort|Pastillas|Embragues|Discos y Camp|Rotulas|Brazos Susp)\s+\w+$/, '$1') || '';
   if (categoriaBase) keywords.push(categoriaBase.toLowerCase());
-  
+
   // Posición
   const posicion = producto.detalles_tecnicos?.["Posición de la pieza"];
   if (posicion) keywords.push(posicion.toLowerCase());
-  
+
   // Aplicaciones
   if (producto.aplicaciones) {
     producto.aplicaciones.forEach(app => {
@@ -2590,16 +2594,16 @@ function generarKeywords(producto) {
       keywords.push(`${app.marca.toLowerCase()} ${app.modelo.toLowerCase()}`);
     });
   }
-  
+
   // Marca
   if (producto.marca) keywords.push(producto.marca.toLowerCase());
-  
+
   // Código
   keywords.push(producto.codigo);
-  
+
   // Keywords generales
   keywords.push('repuestos', 'auto', 'repuestos auto', 'autopartes', 'bethersa', 'mendoza');
-  
+
   // Equivalencias
   if (producto.equivalencias) {
     producto.equivalencias.forEach(eq => {
@@ -2607,7 +2611,7 @@ function generarKeywords(producto) {
       keywords.push(eq.marca.toLowerCase());
     });
   }
-  
+
   // Remover duplicados y unir
   return [...new Set(keywords)].join(', ');
 }
@@ -2618,12 +2622,12 @@ function generarKeywords(producto) {
 function generarURLAmigable(producto) {
   const categoriaBase = producto.categoria?.replace(/^(Amort|Pastillas|Embragues|Discos y Camp|Rotulas|Brazos Susp)\s+\w+$/, '$1') || '';
   const posicion = producto.detalles_tecnicos?.["Posición de la pieza"];
-  
+
   // Obtener primera aplicación principal
   const primeraApp = producto.aplicaciones?.[0];
-  
+
   const partes = [];
-  
+
   if (categoriaBase) partes.push(categoriaBase.toLowerCase());
   if (posicion) partes.push(posicion.toLowerCase());
   if (primeraApp) {
@@ -2631,7 +2635,7 @@ function generarURLAmigable(producto) {
     partes.push(primeraApp.modelo.toLowerCase());
   }
   partes.push(producto.codigo);
-  
+
   return partes
     .join('-')
     .normalize('NFD')
@@ -2741,31 +2745,31 @@ function procesarProductoConSEO(producto) {
 router.get('/metadatos-filtros', async (req, res) => {
   try {
     const { proveedores } = req.query;
-    
+
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
-    
+
     let query = { tiene_precio_valido: true };
-    
+
     // 🆕 Si se especifican proveedores, filtrar categorías por esos proveedores
     if (proveedores) {
       const listaProveedores = proveedores.split(',').map(p => p.trim());
       query.proveedor = { $in: listaProveedores };
     }
-    
+
     // Obtener proveedores únicos (siempre todos)
     const proveedoresDisponibles = await collection.distinct('proveedor', { tiene_precio_valido: true });
-    
+
     // Obtener categorías (filtradas si hay proveedores seleccionados)
     const categoriasDisponibles = await collection.distinct('categoria', query);
-    
+
     res.json({
       success: true,
       proveedores: proveedoresDisponibles.filter(p => p).sort(),
       categorias: categoriasDisponibles.filter(c => c).sort()
     });
-    
+
   } catch (error) {
     console.error('❌ [METADATOS] Error:', error);
     res.status(500).json({
@@ -2782,24 +2786,24 @@ router.get('/metadatos-filtros', async (req, res) => {
 router.get('/exportar-excel', async (req, res) => {
   try {
     console.log('📊 [EXCEL] Iniciando exportación optimizada...');
-    
+
     // 🆕 LEER PARÁMETROS DE FILTRADO
     const { proveedores, categorias } = req.query;
-    
+
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
     // 🆕 CONSTRUIR QUERY CON FILTROS
     let query = { tiene_precio_valido: true };
-    
+
     // Filtro de proveedores
     if (proveedores) {
       const listaProveedores = proveedores.split(',').map(p => p.trim());
       query.proveedor = { $in: listaProveedores };
       console.log(`🔍 [EXCEL] Filtrando por proveedores: ${listaProveedores.join(', ')}`);
     }
-    
+
     // Filtro de categorías
     if (categorias) {
       const listaCategorias = categorias.split(',').map(c => c.trim());
@@ -2810,7 +2814,7 @@ router.get('/exportar-excel', async (req, res) => {
     // 🆕 CONTAR TOTAL DE PRODUCTOS CON FILTROS
     const totalProductos = await collection.countDocuments(query);
     console.log(`📦 [EXCEL] Total de productos a procesar: ${totalProductos}`);
-    
+
     // Si no hay productos que cumplan los filtros
     if (totalProductos === 0) {
       return res.status(404).json({
@@ -2829,7 +2833,7 @@ router.get('/exportar-excel', async (req, res) => {
     try {
       const https = require('https');
       const logoUrl = 'https://bethersa.com.ar/Imagenes/Logos/Empresa/Bether.png';
-      
+
       const logoBuffer = await Promise.race([
         new Promise((resolve, reject) => {
           https.get(logoUrl, (response) => {
@@ -2841,7 +2845,7 @@ router.get('/exportar-excel', async (req, res) => {
         }),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
       ]);
-      
+
       logoId = workbook.addImage({
         buffer: logoBuffer,
         extension: 'png',
@@ -2873,11 +2877,11 @@ router.get('/exportar-excel', async (req, res) => {
           tl: { col: 1.8, row: 0 },
           ext: { width: 300, height: 180 }
         });
-        
+
         for (let i = 1; i <= 5; i++) {
           worksheet.getRow(i).height = 22;
         }
-        
+
         filaActual = 6;
       }
 
@@ -2914,7 +2918,7 @@ router.get('/exportar-excel', async (req, res) => {
       headerRow.getCell('C').value = 'Stock';
       headerRow.getCell('D').value = 'Precio sin IVA';
       headerRow.getCell('E').value = 'Tipo';
-      
+
       ['A', 'B', 'C', 'D'].forEach(col => {
         const cell = headerRow.getCell(col);
         cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
@@ -2925,7 +2929,7 @@ router.get('/exportar-excel', async (req, res) => {
         };
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
       });
-      
+
       headerRow.height = 25;
       filaActual++;
 
@@ -2935,7 +2939,7 @@ router.get('/exportar-excel', async (req, res) => {
         ...query,
         proveedor: nombreProveedor
       };
-      
+
       const marcas = await collection.distinct('aplicaciones.marca', queryMarcas);
 
       console.log(`  🚗 ${marcas.length} marcas en este proveedor`);
@@ -2946,9 +2950,9 @@ router.get('/exportar-excel', async (req, res) => {
         const filaMarca = worksheet.getRow(filaActual);
         filaMarca.getCell('codigo').value = `*** ${marca} ***`;
         filaMarca.getCell('tipo').value = 'MARCA';
-        
+
         worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
-        
+
         const celdaMarca = filaMarca.getCell('A');
         celdaMarca.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
         celdaMarca.fill = {
@@ -2958,7 +2962,7 @@ router.get('/exportar-excel', async (req, res) => {
         };
         celdaMarca.alignment = { horizontal: 'center', vertical: 'middle' };
         filaMarca.height = 30;
-        
+
         filaActual++;
 
         // 🆕 OBTENER PRODUCTOS DE ESTA MARCA (CURSOR PARA LIBERAR MEMORIA)
@@ -2968,7 +2972,7 @@ router.get('/exportar-excel', async (req, res) => {
           proveedor: nombreProveedor,
           'aplicaciones.marca': marca
         };
-        
+
         const cursor = collection.find(
           queryProductos,
           {
@@ -2987,28 +2991,28 @@ router.get('/exportar-excel', async (req, res) => {
 
         // Agrupar productos únicos
         const productosUnicos = new Map();
-        
+
         for await (const p of cursor) {
           const aplicMarca = p.aplicaciones?.filter(app => app.marca === marca) || [];
-          
+
           const modelosCompatibles = new Set();
           aplicMarca.forEach(app => {
             if (app.modelo) modelosCompatibles.add(app.modelo);
           });
-          
+
           if (modelosCompatibles.size === 0) {
             modelosCompatibles.add('Sin Modelo');
           }
-          
+
           const claveUnica = `${p.codigo}_${marca}`;
-          
+
           if (productosUnicos.has(claveUnica)) {
             const productoExistente = productosUnicos.get(claveUnica);
             modelosCompatibles.forEach(m => productoExistente.modelos.add(m));
           } else {
             const precio = p.precio_numerico || p.precio_lista_con_iva || 0;
             const precioSinIVA = (precio / 1.21).toFixed(2);
-            
+
             productosUnicos.set(claveUnica, {
               codigo: p.codigo,
               descripcion: p.nombre,
@@ -3027,12 +3031,12 @@ router.get('/exportar-excel', async (req, res) => {
             if (!productosPorModelo[modelo]) {
               productosPorModelo[modelo] = {};
             }
-            
+
             const categoria = producto.categoria;
             if (!productosPorModelo[modelo][categoria]) {
               productosPorModelo[modelo][categoria] = [];
             }
-            
+
             productosPorModelo[modelo][categoria].push({
               codigo: producto.codigo,
               descripcion: producto.descripcion,
@@ -3047,14 +3051,14 @@ router.get('/exportar-excel', async (req, res) => {
 
         // Escribir modelos
         const modelos = Object.keys(productosPorModelo).sort();
-        
+
         for (const modelo of modelos) {
           const filaModelo = worksheet.getRow(filaActual);
           filaModelo.getCell('codigo').value = `  >> ${modelo}`;
           filaModelo.getCell('tipo').value = 'MODELO';
-          
+
           worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
-          
+
           const celdaModelo = filaModelo.getCell('A');
           celdaModelo.font = { bold: true, size: 11, color: { argb: 'FF000000' } };
           celdaModelo.fill = {
@@ -3064,18 +3068,18 @@ router.get('/exportar-excel', async (req, res) => {
           };
           celdaModelo.alignment = { horizontal: 'left', vertical: 'middle' };
           filaModelo.height = 24;
-          
+
           filaActual++;
 
           const categorias = Object.keys(productosPorModelo[modelo]).sort();
-          
+
           for (const categoria of categorias) {
             const filaCategoria = worksheet.getRow(filaActual);
             filaCategoria.getCell('codigo').value = `    • ${categoria}`;
             filaCategoria.getCell('tipo').value = 'CATEGORIA';
-            
+
             worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
-            
+
             const celdaCategoria = filaCategoria.getCell('A');
             celdaCategoria.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
             celdaCategoria.fill = {
@@ -3085,11 +3089,11 @@ router.get('/exportar-excel', async (req, res) => {
             };
             celdaCategoria.alignment = { horizontal: 'left', vertical: 'middle' };
             filaCategoria.height = 20;
-            
+
             filaActual++;
 
             const productosCategoria = productosPorModelo[modelo][categoria];
-            
+
             productosCategoria.forEach(prod => {
               const filaProd = worksheet.getRow(filaActual);
               filaProd.getCell('codigo').value = prod.codigo;
@@ -3115,9 +3119,9 @@ router.get('/exportar-excel', async (req, res) => {
 
     // GENERAR Y ENVIAR
     const buffer = await workbook.xlsx.writeBuffer();
-    
+
     const timestamp = new Date().toISOString().split('T')[0];
-    
+
     // 🆕 Nombre de archivo personalizado según filtros
     let nombreArchivo = `productos_bethersa_${timestamp}`;
     if (proveedores) {
@@ -3131,10 +3135,10 @@ router.get('/exportar-excel', async (req, res) => {
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
     res.setHeader('Content-Length', buffer.length);
-    
+
     console.log(`\n✅ [EXCEL] Exportación completada: ${nombreArchivo}`);
     console.log(`📊 Memoria usada: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`);
-    
+
     res.send(buffer);
 
   } catch (error) {
