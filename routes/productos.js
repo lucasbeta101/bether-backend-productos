@@ -4,7 +4,7 @@ const { MongoClient, ServerApiVersion } = require('mongodb');
 const ExcelJS = require('exceljs');
 
 // ===== CONFIGURACIÓN MONGODB =====
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://lucasbeta101:rp5d8mdX7rxoluQU@bether.qxglnnl.mongodb.net/?retryWrites=true&w=majority&appName=Bether";
+const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || "autopartes";
 const COLLECTION_NAME = process.env.COLLECTION_NAME || "productos";
 
