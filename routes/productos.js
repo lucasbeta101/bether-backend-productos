@@ -489,31 +489,29 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
       matchConditions["detalles_tecnicos.Posición de la pieza"] = { $regex: mappedPosition, $options: 'i' };
     }
 
-    // Aplicaciones de vehículo
-    const elemMatchAndConditions = [];
+    // Aplicaciones de vehículo + año → búsqueda por índice $text
+    // Usamos $text en lugar de $regex para: mayor robustez con caracteres especiales
+    // (paréntesis, barras, puntos) y mejor rendimiento con el índice ya creado.
+    const textParts = [];
 
     if (parsedQuery.vehicleTerms && parsedQuery.vehicleTerms.length > 0) {
-      const vehicleConditions = parsedQuery.vehicleTerms.map(term => ({
-        $or: [
-          { "marca": { $regex: term, $options: 'i' } },
-          { "modelo": { $regex: term, $options: 'i' } }
-        ]
-      }));
-      elemMatchAndConditions.push(...vehicleConditions);
-    }
-
-    // Año
-    if (parsedQuery.year) {
-      const yearRegex = `(${parsedQuery.year}|${parsedQuery.year.slice(-2)})`;
-      elemMatchAndConditions.push({
-        'version': { $regex: yearRegex, $options: 'i' }
+      parsedQuery.vehicleTerms.forEach(term => {
+        // Limpiar caracteres que pueden romper $text o $regex: ()/.\\,;:!?*[]{}^$|
+        const cleaned = term.replace(/[()\/\\.,;:!?*\[\]{}^$|]/g, ' ').trim();
+        // Dividir en sub-palabras por si había chars pegados (ej: "Pick-Up" → "Pick Up")
+        cleaned.split(/\s+/).forEach(sub => {
+          if (sub.length > 1) textParts.push(sub);
+        });
       });
     }
 
-    if (elemMatchAndConditions.length > 0) {
-      matchConditions.aplicaciones = {
-        $elemMatch: { $and: elemMatchAndConditions }
-      };
+    // Agregar el año si fue detectado
+    if (parsedQuery.year) {
+      textParts.push(parsedQuery.year);
+    }
+
+    if (textParts.length > 0) {
+      matchConditions.$text = { $search: textParts.join(' ') };
     }
 
   } else {
