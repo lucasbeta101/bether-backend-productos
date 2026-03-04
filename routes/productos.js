@@ -327,9 +327,13 @@ function parseNaturalQuery(query) {
     };
   }
 
-  // 🆕 DETECCIÓN DE CÓDIGO EXACTO
+  // DETECCIÓN DE CÓDIGO EXACTO
+  // Un código real de autoparte siempre tiene dígitos, guiones o underscores.
+  // Palabras simples como 'corsa', 'ford', 'frenos' NO son códigos.
   const trimmedQuery = query.trim();
-  const isLikelyCode = /^[A-Za-z0-9\-_]+$/.test(trimmedQuery) && trimmedQuery.length >= 3;
+  const isLikelyCode = /^[A-Za-z0-9\-_]+$/.test(trimmedQuery) &&
+    trimmedQuery.length >= 3 &&
+    (/\d/.test(trimmedQuery) || trimmedQuery.includes('-') || trimmedQuery.includes('_'));
 
   const normalized = normalizeText(query);
   const words = normalized.split(' ').filter(word => !STOP_WORDS.includes(word) && word.length > 1);
@@ -513,33 +517,37 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     }
 
   } else {
-    console.log('🔍 [PIPELINE] Búsqueda libre');
+    console.log('🔍 [PIPELINE] Búsqueda libre con índice de texto');
 
     const freeText = parsedQuery.freeText || "";
-    const keywords = normalizeText(freeText).split(' ').filter(k => k.length > 0);
 
-    if (keywords.length > 0) {
-      matchConditions.$and = keywords.map(word => ({
-        $or: [
-          { codigo: { $regex: word, $options: 'i' } },
-          { nombre: { $regex: word, $options: 'i' } },
-          { "aplicaciones.marca": { $regex: word, $options: 'i' } },
-          { "aplicaciones.modelo": { $regex: word, $options: 'i' } }
-        ]
-      }));
+    if (freeText.trim().length > 0) {
+      // Usar índice $text de MongoDB para búsqueda eficiente y relevante.
+      // Cubre los campos indexados: nombre, aplicaciones.marca, aplicaciones.modelo
+      matchConditions.$text = { $search: freeText.trim() };
     }
   }
 
   console.log('🚨 [PIPELINE] Consulta final:', JSON.stringify(matchConditions, null, 2));
 
+  // Si hay búsqueda de texto libre, ordenar por relevancia textual
+  const usaTextSearch = !!matchConditions.$text;
+
   const pipeline = [
-    { $match: matchConditions },
-    { $sort: { codigo: 1 } }
+    { $match: matchConditions }
   ];
+
+  if (usaTextSearch) {
+    // Agregar score de relevancia y ordenar por él
+    pipeline.push({ $addFields: { _textScore: { $meta: 'textScore' } } });
+    pipeline.push({ $sort: { _textScore: -1 } });
+  } else {
+    pipeline.push({ $sort: { codigo: 1 } });
+  }
 
   if (offset > 0) pipeline.push({ $skip: offset });
   pipeline.push({ $limit: limit });
-  pipeline.push({ $project: { _id: 0 } });
+  pipeline.push({ $project: { _id: 0, _textScore: 0 } });
 
   return pipeline;
 }
