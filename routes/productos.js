@@ -226,6 +226,7 @@ function getValidCategoriesForProduct(product) {
   const categoryMap = {
     'amortiguador': ['Amort CORVEN', 'Amort LIP', 'Amort SADAR', 'Amort SUPER PICKUP', 'Amort PRO TUNNING', 'Amortiguadores'],
     'pastilla': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
+    'pastillas de freno': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C'],
     'freno': ['Pastillas FERODO', 'Pastillas JURID', 'Pastillas CORVEN HT', 'Pastillas CORVEN C', 'Discos y Camp CORVEN', 'Discos y Camp HF'],
     'disco': ['Discos y Camp CORVEN', 'Discos y Camp HF'],
     'cazoleta': ['Cazoletas CORVEN', 'Cazoletas SADAR'],
