@@ -13,18 +13,18 @@ app.use(cors({
     // Dominios de producción
     'https://bethersa.com.ar',
     'https://www.bethersa.com.ar',
-    'https://bethersa.online', 
+    'https://bethersa.online',
     'https://www.bethersa.online',
     'https://bethersa.store',
     'https://www.bethersa.store',
-    
+
     // Desarrollo local
     'http://localhost:3000',
-    'http://localhost:5000', 
+    'http://localhost:5000',
     'http://127.0.0.1:5500',
     'http://localhost:8080'
   ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   credentials: true,
   optionsSuccessStatus: 200 // Para navegadores legacy
@@ -134,11 +134,11 @@ app.use((req, res, next) => {
   // Log de requests importantes para SEO
   const seoRoutes = ['/sitemap', '/robots', '/categoria', '/amortiguador', '/pastillas', '/repuestos'];
   const isSEORoute = seoRoutes.some(route => req.path.includes(route));
-  
+
   if (isSEORoute) {
     console.log(`🎯 [SEO-REQUEST] ${req.method} ${req.path} - User-Agent: ${req.get('User-Agent')?.substring(0, 50) || 'Unknown'}`);
   }
-  
+
   next();
 });
 
@@ -165,7 +165,7 @@ app.use((req, res, next) => {
     'X-XSS-Protection': '1; mode=block',
     'Referrer-Policy': 'strict-origin-when-cross-origin'
   });
-  
+
   // Cache headers para contenido estático SEO
   if (req.path.includes('/sitemap') || req.path.includes('/robots')) {
     res.set({
@@ -173,7 +173,7 @@ app.use((req, res, next) => {
       'Vary': 'Accept-Encoding'
     });
   }
-  
+
   next();
 });
 
@@ -200,19 +200,19 @@ app.get('/seo-check', async (req, res) => {
     // Verificar que los endpoints SEO respondan
     try {
       const baseUrl = `${req.protocol}://${req.get('host')}`;
-      
+
       // Estas verificaciones se pueden hacer más robustas con fetch interno
       seoStatus.checks.sitemap_disponible = true; // Simplificado
       seoStatus.checks.robots_disponible = true;
       seoStatus.checks.categorias_seo = true;
       seoStatus.checks.redirects_funcionando = true;
-      
+
     } catch (error) {
       console.error('Error en verificación SEO:', error);
     }
 
     res.json(seoStatus);
-    
+
   } catch (error) {
     console.error('❌ [SEO-CHECK] Error:', error);
     res.status(500).json({
@@ -225,15 +225,15 @@ app.get('/seo-check', async (req, res) => {
 // ===== ERROR HANDLER =====
 app.use((err, req, res, next) => {
   console.error('❌ [ERROR]:', err);
-  
+
   // Log especial para errores en rutas SEO
   const seoRoutes = ['/sitemap', '/robots', '/categoria'];
   const isSEOError = seoRoutes.some(route => req.path.includes(route));
-  
+
   if (isSEOError) {
     console.error(`🚨 [SEO-ERROR] Error en ruta SEO: ${req.path}`, err.message);
   }
-  
+
   res.status(500).json({
     success: false,
     error: 'Error interno del servidor',
@@ -246,11 +246,11 @@ app.use((req, res) => {
   // Log de 404s en rutas importantes
   const rutasImportantes = ['/sitemap', '/robots', '/categoria', '/producto'];
   const esRutaImportante = rutasImportantes.some(ruta => req.path.includes(ruta));
-  
+
   if (esRutaImportante) {
     console.warn(`⚠️ [SEO-404] Ruta importante no encontrada: ${req.path}`);
   }
-  
+
   res.status(404).json({
     success: false,
     error: 'Endpoint no encontrado',

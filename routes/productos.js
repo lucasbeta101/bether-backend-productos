@@ -3163,19 +3163,42 @@ router.get('/exportar-excel', async (req, res) => {
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// GET /api/producto/:codigo — Buscar producto por código exacto
+// GET /api/categorias — Lista de categorías principales definidas en config
 // ---------------------------------------------------------------------------
-router.get('/producto/:codigo', async (req, res) => {
+router.get('/categorias', (req, res) => {
   try {
-    const { codigo } = req.params;
+    // Devuelve las claves del objeto CATEGORIAS ("Amortiguadores", "Bombas de Freno", etc.)
+    const ordenadas = Object.keys(CATEGORIAS).sort((a, b) => a.localeCompare(b, 'es'));
+    res.json({ success: true, data: ordenadas, total: ordenadas.length });
+  } catch (error) {
+    console.error('❌ [CATEGORIAS] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/producto/:codigo — Buscar producto por código exacto (acepta puntos y caracteres especiales)
+// ---------------------------------------------------------------------------
+router.get('/producto/:codigo(*)', async (req, res) => {
+  try {
+    const codigo = req.params.codigo.trim();
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
-    const producto = await collection.findOne(
+    // Búsqueda exacta primero, luego fallback case-insensitive
+    let producto = await collection.findOne(
       { codigo: codigo },
       { projection: { _id: 0 } }
     );
+
+    if (!producto) {
+      // Fallback: búsqueda case-insensitive
+      producto = await collection.findOne(
+        { codigo: { $regex: `^${codigo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } },
+        { projection: { _id: 0 } }
+      );
+    }
 
     if (!producto) {
       return res.status(404).json({
@@ -3196,7 +3219,7 @@ router.get('/producto/:codigo', async (req, res) => {
 // ---------------------------------------------------------------------------
 // PATCH /api/producto/:codigo — Actualizar cualquier campo (body parcial)
 // ---------------------------------------------------------------------------
-router.patch('/producto/:codigo', async (req, res) => {
+router.patch('/producto/:codigo(*)', async (req, res) => {
   try {
     const { codigo } = req.params;
     const body = req.body;
@@ -3245,18 +3268,44 @@ router.patch('/producto/:codigo', async (req, res) => {
       }
     }
 
+    // Validar estructura de equivalencias
+    if (body.equivalencias !== undefined) {
+      if (!Array.isArray(body.equivalencias)) {
+        return res.status(400).json({ success: false, error: 'equivalencias debe ser un array' });
+      }
+      for (const eq of body.equivalencias) {
+        if (typeof eq !== 'object' || !eq.marca || !eq.codigo) {
+          return res.status(400).json({ success: false, error: 'Cada equivalencia requiere { marca, codigo }' });
+        }
+      }
+    }
+
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
-    const result = await collection.updateOne(
-      { codigo: codigo },
-      { $set: body }
-    );
+    // Búsqueda exacta primero
+    let filtro = { codigo: codigo.trim() };
 
-    if (result.matchedCount === 0) {
+    // Verificar si existe con el trim exacto
+    let productoExistente = await collection.findOne(filtro);
+
+    // Fallback: case-insensitive y sin regex chars
+    if (!productoExistente) {
+      const cleanCod = codigo.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filtro = { codigo: { $regex: `^${cleanCod}$`, $options: 'i' } };
+      productoExistente = await collection.findOne(filtro);
+    }
+
+    if (!productoExistente) {
       return res.status(404).json({ success: false, error: `Producto "${codigo}" no encontrado` });
     }
+
+    // Actualizar usando el _id encontrado para evitar duplicados o errores en la query
+    const result = await collection.updateOne(
+      { _id: productoExistente._id },
+      { $set: body }
+    );
 
     console.log(`✅ [PATCH-PRODUCTO] Código: ${codigo} — Campos actualizados: ${Object.keys(body).join(', ')}`);
     res.json({
@@ -3267,6 +3316,38 @@ router.patch('/producto/:codigo', async (req, res) => {
 
   } catch (error) {
     console.error('❌ [PATCH-PRODUCTO] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/categoria/:categoria/conteo — Conteo y precio promedio para preview
+// ---------------------------------------------------------------------------
+router.get('/categoria/:categoria/conteo', async (req, res) => {
+  try {
+    const { categoria } = req.params;
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const subcategorias = CATEGORIAS[categoria] || null;
+    const filtro = subcategorias
+      ? { categoria: { $in: subcategorias }, tiene_precio_valido: true }
+      : { categoria: categoria, tiene_precio_valido: true };
+
+    const [total, agg] = await Promise.all([
+      collection.countDocuments(filtro),
+      collection.aggregate([
+        { $match: filtro },
+        { $group: { _id: null, promedio: { $avg: '$precio_numerico' } } }
+      ]).toArray()
+    ]);
+
+    const promedio = agg[0]?.promedio || 0;
+    res.json({ success: true, total, promedio });
+
+  } catch (error) {
+    console.error('❌ [CONTEO-CATEGORIA] Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -3426,6 +3507,18 @@ router.post('/producto', async (req, res) => {
       for (const ap of body.aplicaciones) {
         if (!ap.marca || !ap.modelo || !ap.version) {
           return res.status(400).json({ success: false, error: 'Cada aplicación requiere { marca, modelo, version }' });
+        }
+      }
+    }
+
+    // Validar estructura de equivalencias
+    if (body.equivalencias && !Array.isArray(body.equivalencias)) {
+      return res.status(400).json({ success: false, error: 'equivalencias debe ser un array' });
+    }
+    if (Array.isArray(body.equivalencias)) {
+      for (const eq of body.equivalencias) {
+        if (!eq.marca || !eq.codigo) {
+          return res.status(400).json({ success: false, error: 'Cada equivalencia requiere { marca, codigo }' });
         }
       }
     }
