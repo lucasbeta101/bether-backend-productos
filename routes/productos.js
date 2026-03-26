@@ -3158,4 +3158,337 @@ router.get('/exportar-excel', async (req, res) => {
   }
 });
 
+// ===========================================================================
+// ✏️ ENDPOINTS DE GESTIÓN DE PRODUCTOS
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// GET /api/producto/:codigo — Buscar producto por código exacto
+// ---------------------------------------------------------------------------
+router.get('/producto/:codigo', async (req, res) => {
+  try {
+    const { codigo } = req.params;
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const producto = await collection.findOne(
+      { codigo: codigo },
+      { projection: { _id: 0 } }
+    );
+
+    if (!producto) {
+      return res.status(404).json({
+        success: false,
+        error: `Producto con código "${codigo}" no encontrado`
+      });
+    }
+
+    console.log(`✅ [GET-PRODUCTO] Código: ${codigo}`);
+    res.json({ success: true, data: producto });
+
+  } catch (error) {
+    console.error('❌ [GET-PRODUCTO] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/producto/:codigo — Actualizar cualquier campo (body parcial)
+// ---------------------------------------------------------------------------
+router.patch('/producto/:codigo', async (req, res) => {
+  try {
+    const { codigo } = req.params;
+    const body = req.body;
+
+    if (!body || Object.keys(body).length === 0) {
+      return res.status(400).json({ success: false, error: 'Body vacío, no hay campos para actualizar' });
+    }
+
+    // Campos que NO se pueden modificar vía esta ruta
+    const camposProtegidos = ['_id', 'codigo'];
+    camposProtegidos.forEach(c => delete body[c]);
+
+    // Si viene precio_numerico, recalcular precio_lista_con_iva formateado
+    if (body.precio_numerico !== undefined) {
+      const num = parseFloat(body.precio_numerico);
+      if (!isNaN(num)) {
+        body.precio_numerico = num;
+        body.tiene_precio_valido = num > 0;
+        // Formato: "$1.234,56"
+        body.precio_lista_con_iva = '$' + num.toLocaleString('es-AR', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+      }
+    }
+
+    // Validar estructura de aplicaciones si viene en el body
+    if (body.aplicaciones !== undefined) {
+      if (!Array.isArray(body.aplicaciones)) {
+        return res.status(400).json({ success: false, error: 'aplicaciones debe ser un array' });
+      }
+      for (const ap of body.aplicaciones) {
+        if (typeof ap !== 'object' || !ap.marca || !ap.modelo || !ap.version) {
+          return res.status(400).json({
+            success: false,
+            error: 'Cada aplicación debe tener { marca, modelo, version }'
+          });
+        }
+      }
+    }
+
+    // Validar estructura de detalles_tecnicos
+    if (body.detalles_tecnicos !== undefined) {
+      if (typeof body.detalles_tecnicos !== 'object' || Array.isArray(body.detalles_tecnicos)) {
+        return res.status(400).json({ success: false, error: 'detalles_tecnicos debe ser un objeto { Clave: Valor }' });
+      }
+    }
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const result = await collection.updateOne(
+      { codigo: codigo },
+      { $set: body }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, error: `Producto "${codigo}" no encontrado` });
+    }
+
+    console.log(`✅ [PATCH-PRODUCTO] Código: ${codigo} — Campos actualizados: ${Object.keys(body).join(', ')}`);
+    res.json({
+      success: true,
+      message: `Producto ${codigo} actualizado correctamente`,
+      camposActualizados: Object.keys(body)
+    });
+
+  } catch (error) {
+    console.error('❌ [PATCH-PRODUCTO] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/categoria/:categoria/precio-masivo — Aumento % en una categoría
+// ---------------------------------------------------------------------------
+router.patch('/categoria/:categoria/precio-masivo', async (req, res) => {
+  try {
+    const { categoria } = req.params;
+    const { porcentaje } = req.body;
+
+    if (porcentaje === undefined || isNaN(parseFloat(porcentaje))) {
+      return res.status(400).json({ success: false, error: 'Se requiere "porcentaje" numérico en el body' });
+    }
+
+    const pct = parseFloat(porcentaje);
+    if (pct <= -100) {
+      return res.status(400).json({ success: false, error: 'El porcentaje no puede ser menor o igual a -100%' });
+    }
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Obtener los productos de la categoría para recalcular precio_lista_con_iva
+    const subcategorias = CATEGORIAS[categoria] || null;
+    const filtroCategoria = subcategorias
+      ? { categoria: { $in: subcategorias }, tiene_precio_valido: true }
+      : { categoria: categoria, tiene_precio_valido: true };
+
+    const productos = await collection.find(filtroCategoria, {
+      projection: { _id: 1, codigo: 1, precio_numerico: 1 }
+    }).toArray();
+
+    if (productos.length === 0) {
+      return res.status(404).json({ success: false, error: `No se encontraron productos en la categoría "${categoria}"` });
+    }
+
+    const factor = 1 + pct / 100;
+    const bulkOps = productos.map(prod => {
+      const nuevoPrecio = parseFloat((prod.precio_numerico * factor).toFixed(2));
+      return {
+        updateOne: {
+          filter: { _id: prod._id },
+          update: {
+            $set: {
+              precio_numerico: nuevoPrecio,
+              precio_lista_con_iva: '$' + nuevoPrecio.toLocaleString('es-AR', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+              })
+            }
+          }
+        }
+      };
+    });
+
+    const result = await collection.bulkWrite(bulkOps, { ordered: false });
+
+    console.log(`✅ [PRECIO-MASIVO] Categoría: ${categoria} — Porcentaje: ${pct}% — Actualizados: ${result.modifiedCount}`);
+    res.json({
+      success: true,
+      message: `Aumento del ${pct}% aplicado en la categoría "${categoria}"`,
+      productosAfectados: result.modifiedCount
+    });
+
+  } catch (error) {
+    console.error('❌ [PRECIO-MASIVO] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/importar-precios — Actualizar precios en lote desde array
+// Body: { productos: [{codigo, precio_numerico}] }
+// ---------------------------------------------------------------------------
+router.post('/importar-precios', async (req, res) => {
+  try {
+    const { productos } = req.body;
+
+    if (!Array.isArray(productos) || productos.length === 0) {
+      return res.status(400).json({ success: false, error: 'Se requiere array "productos" con al menos un elemento' });
+    }
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const bulkOps = [];
+    const errores = [];
+
+    for (const item of productos) {
+      const { codigo, precio_numerico } = item;
+      if (!codigo) { errores.push(`Fila sin código`); continue; }
+      const num = parseFloat(precio_numerico);
+      if (isNaN(num) || num <= 0) { errores.push(`Código ${codigo}: precio inválido`); continue; }
+
+      bulkOps.push({
+        updateOne: {
+          filter: { codigo: String(codigo) },
+          update: {
+            $set: {
+              precio_numerico: num,
+              precio_lista_con_iva: '$' + num.toLocaleString('es-AR', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+              }),
+              tiene_precio_valido: true
+            }
+          }
+        }
+      });
+    }
+
+    let actualizados = 0;
+    let noEncontrados = 0;
+
+    if (bulkOps.length > 0) {
+      const result = await collection.bulkWrite(bulkOps, { ordered: false });
+      actualizados = result.modifiedCount;
+      noEncontrados = bulkOps.length - actualizados;
+    }
+
+    console.log(`✅ [IMPORTAR-PRECIOS] Actualizados: ${actualizados}, No encontrados: ${noEncontrados}, Errores de validación: ${errores.length}`);
+    res.json({
+      success: true,
+      actualizados,
+      noEncontrados,
+      erroresValidacion: errores.length,
+      detalleErrores: errores.slice(0, 20) // Máximo 20 errores en la respuesta
+    });
+
+  } catch (error) {
+    console.error('❌ [IMPORTAR-PRECIOS] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/producto — Crear un producto nuevo
+// ---------------------------------------------------------------------------
+router.post('/producto', async (req, res) => {
+  try {
+    const body = req.body;
+
+    // Validaciones mínimas obligatorias
+    if (!body.codigo || !body.nombre) {
+      return res.status(400).json({ success: false, error: 'Los campos "codigo" y "nombre" son obligatorios' });
+    }
+
+    // Validar estructura de aplicaciones
+    if (body.aplicaciones && !Array.isArray(body.aplicaciones)) {
+      return res.status(400).json({ success: false, error: 'aplicaciones debe ser un array' });
+    }
+    if (Array.isArray(body.aplicaciones)) {
+      for (const ap of body.aplicaciones) {
+        if (!ap.marca || !ap.modelo || !ap.version) {
+          return res.status(400).json({ success: false, error: 'Cada aplicación requiere { marca, modelo, version }' });
+        }
+      }
+    }
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Verificar que el código no exista (409 si ya existe)
+    const existe = await collection.findOne({ codigo: String(body.codigo) }, { projection: { _id: 1 } });
+    if (existe) {
+      return res.status(409).json({
+        success: false,
+        error: `Ya existe un producto con el código "${body.codigo}"`
+      });
+    }
+
+    // Calcular precio formateado si viene precio_numerico
+    const nuevoProd = {
+      codigo: String(body.codigo),
+      nombre: body.nombre,
+      marca: body.marca || 'SIN MARCA',
+      categoria: body.categoria || '',
+      proveedor: body.proveedor || '',
+      url: body.url || '',
+      imagenes: Array.isArray(body.imagenes) ? body.imagenes : [],
+      aplicaciones: Array.isArray(body.aplicaciones) ? body.aplicaciones : [],
+      equivalencias: Array.isArray(body.equivalencias) ? body.equivalencias : [],
+      detalles_tecnicos: (typeof body.detalles_tecnicos === 'object' && !Array.isArray(body.detalles_tecnicos))
+        ? body.detalles_tecnicos : {},
+      precio_numerico: 0,
+      precio_lista_con_iva: '$0,00',
+      tiene_precio_valido: false,
+      stock_status: body.stock_status || 'Consultar Stock',
+      datos_completos: true,
+      convertido_timestamp: new Date().toISOString()
+    };
+
+    if (body.precio_numerico) {
+      const num = parseFloat(body.precio_numerico);
+      if (!isNaN(num) && num > 0) {
+        nuevoProd.precio_numerico = num;
+        nuevoProd.tiene_precio_valido = true;
+        nuevoProd.precio_lista_con_iva = '$' + num.toLocaleString('es-AR', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+      }
+    }
+
+    const result = await collection.insertOne(nuevoProd);
+
+    console.log(`✅ [CREAR-PRODUCTO] Código: ${nuevoProd.codigo} — ID: ${result.insertedId}`);
+    res.status(201).json({
+      success: true,
+      message: `Producto "${nuevoProd.codigo}" creado correctamente`,
+      codigo: nuevoProd.codigo
+    });
+
+  } catch (error) {
+    console.error('❌ [CREAR-PRODUCTO] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;
