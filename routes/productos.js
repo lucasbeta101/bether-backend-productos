@@ -392,7 +392,7 @@ function parseNaturalQuery(query) {
 function buildSearchPipeline(parsedQuery, limit, offset) {
   console.log('🔧 [PIPELINE] Construyendo búsqueda...');
 
-  let matchConditions = { tiene_precio_valido: true };
+  let matchConditions = { tiene_precio_valido: true, pausado: { $ne: true } };
 
   // 🆕 PRIORIDAD PARA QUERIES CON FILTROS EXTRAÍDOS
   if (parsedQuery.isFilterQuery && parsedQuery.extractedFilters) {
@@ -453,7 +453,7 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
     console.log('🔍 [PIPELINE] Búsqueda por código exacto:', parsedQuery.exactCode);
 
     matchConditions = {
-      tiene_precio_valido: true,
+      tiene_precio_valido: true, pausado: { $ne: true },
       $or: [
         { codigo: parsedQuery.exactCode },
         { codigo: { $regex: parsedQuery.exactCode, $options: 'i' } },
@@ -601,7 +601,7 @@ router.get('/metadatos', async (req, res) => {
 
     // Si solo necesita el conteo (para inicialización rápida)
     if (solo_conteo === 'true') {
-      const totalCount = await collection.countDocuments({ tiene_precio_valido: true });
+      const totalCount = await collection.countDocuments({ tiene_precio_valido: true, pausado: { $ne: true } });
       return res.json({
         success: true,
         count: totalCount,
@@ -614,7 +614,7 @@ router.get('/metadatos', async (req, res) => {
     }
 
     // Filtros base
-    let matchConditions = { tiene_precio_valido: true };
+    let matchConditions = { tiene_precio_valido: true, pausado: { $ne: true } };
 
     // 🆕 MANEJO DEL PARÁMETRO GRUPO
     if (grupo && grupo !== 'todos') {
@@ -782,7 +782,7 @@ router.get('/filtros-rapidos', async (req, res) => {
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
-    let matchConditions = { tiene_precio_valido: true };
+    let matchConditions = { tiene_precio_valido: true, pausado: { $ne: true } };
 
     // 🆕 MANEJO DEL PARÁMETRO GRUPO
     if (grupo && grupo !== 'todos') {
@@ -918,7 +918,7 @@ router.post('/busqueda-codigos-lote', async (req, res) => {
     const productos = await collection.find(
       {
         codigo: { $in: codigosLimpios },
-        tiene_precio_valido: true
+        tiene_precio_valido: true, pausado: { $ne: true }
       },
       {
         projection: {
@@ -996,7 +996,7 @@ router.post('/verificar-codigos-existencia', async (req, res) => {
     const productosExistentes = await collection.find(
       {
         codigo: { $in: codigosLimpios },
-        tiene_precio_valido: true
+        tiene_precio_valido: true, pausado: { $ne: true }
       },
       { projection: { codigo: 1, _id: 0 } }
     ).toArray();
@@ -1045,7 +1045,7 @@ router.get('/producto-rapido/:codigo', async (req, res) => {
     const producto = await collection.findOne(
       {
         codigo: codigo.trim(),
-        tiene_precio_valido: true
+        tiene_precio_valido: true, pausado: { $ne: true }
       },
       {
         projection: {
@@ -1155,7 +1155,7 @@ router.get('/producto/:codigo', async (req, res) => {
     const collection = db.collection(COLLECTION_NAME);
 
     const producto = await collection.findOne(
-      { codigo: codigo },
+      { codigo: codigo, pausado: { $ne: true } },
       { projection: { _id: 0 } }
     );
 
@@ -1321,7 +1321,7 @@ router.get('/categoria/:categoria', async (req, res) => {
     const collection = db.collection(COLLECTION_NAME);
 
     // Obtener productos de la categoría
-    let matchConditions = { tiene_precio_valido: true };
+    let matchConditions = { tiene_precio_valido: true, pausado: { $ne: true } };
 
     if (CATEGORIAS[categoriaReal]) {
       matchConditions.categoria = { $in: CATEGORIAS[categoriaReal] };
@@ -1562,7 +1562,7 @@ router.get('/marcas', async (req, res) => {
     const collection = db.collection(COLLECTION_NAME);
 
     // Construir filtro base
-    let matchConditions = { tiene_precio_valido: true };
+    let matchConditions = { tiene_precio_valido: true, pausado: { $ne: true } };
 
     // Filtrar por categoría si se especifica
     if (categoria && categoria !== 'todos') {
@@ -1635,7 +1635,7 @@ router.get('/modelos', async (req, res) => {
     const collection = db.collection(COLLECTION_NAME);
 
     // Construir filtro base
-    let matchConditions = { tiene_precio_valido: true };
+    let matchConditions = { tiene_precio_valido: true, pausado: { $ne: true } };
 
     // Filtrar por categoría si se especifica
     if (categoria && categoria !== 'todos') {
@@ -1713,7 +1713,7 @@ router.get('/versiones', async (req, res) => {
     const collection = db.collection(COLLECTION_NAME);
 
     // Construir filtro base
-    let matchConditions = { tiene_precio_valido: true };
+    let matchConditions = { tiene_precio_valido: true, pausado: { $ne: true } };
 
     // Filtrar por categoría si se especifica
     if (categoria && categoria !== 'todos') {
@@ -1801,7 +1801,7 @@ router.get('/busqueda-filtrada', async (req, res) => {
     console.log('🔍 [BÚSQUEDA-FILTRADA] Filtros recibidos:', { categoria, marca, modelo, version });
 
     // Construir condiciones de filtrado
-    let matchConditions = { tiene_precio_valido: true };
+    let matchConditions = { tiene_precio_valido: true, pausado: { $ne: true } };
 
     // 🎯 FILTRO POR CATEGORÍA (principal o subcategoría exacta)
     if (categoria && categoria !== 'todos') {
@@ -1920,7 +1920,7 @@ router.get('/filtros-stats', async (req, res) => {
     const collection = db.collection(COLLECTION_NAME);
 
     // Construir filtro base
-    let matchConditions = { tiene_precio_valido: true };
+    let matchConditions = { tiene_precio_valido: true, pausado: { $ne: true } };
 
     if (categoria && categoria !== 'todos') {
       if (CATEGORIAS[categoria]) {
@@ -2019,7 +2019,7 @@ router.get('/filtros-autocomplete', async (req, res) => {
     // Pipeline para autocompletar
     for (const field of searchFields) {
       const pipeline = [
-        { $match: { tiene_precio_valido: true } },
+        { $match: { tiene_precio_valido: true, pausado: { $ne: true } } },
         { $unwind: field.includes('aplicaciones') ? "$aplicaciones" : "$categoria" },
         {
           $match: {
@@ -2069,7 +2069,7 @@ router.get('/sitemap-productos.xml', async (req, res) => {
 
     // Obtener productos más populares/importantes (amortiguadores primero)
     const productos = await collection.find(
-      { tiene_precio_valido: true },
+      { tiene_precio_valido: true, pausado: { $ne: true } },
       {
         projection: {
           codigo: 1,
@@ -2284,7 +2284,7 @@ router.get('/producto-por-slug/:slug', async (req, res) => {
     const collection = db.collection(COLLECTION_NAME);
 
     // Buscar todos los productos y comparar slugs
-    const productos = await collection.find({ tiene_precio_valido: true }).limit(500).toArray();
+    const productos = await collection.find({ tiene_precio_valido: true, pausado: { $ne: true } }).limit(500).toArray();
 
     const producto = productos.find(p => {
       const slugGenerado = crearSlugSimple(p);
@@ -2760,7 +2760,7 @@ router.get('/metadatos-filtros', async (req, res) => {
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
-    let query = { tiene_precio_valido: true };
+    let query = { tiene_precio_valido: true, pausado: { $ne: true } };
 
     // 🆕 Si se especifican proveedores, filtrar categorías por esos proveedores
     if (proveedores) {
@@ -2769,7 +2769,7 @@ router.get('/metadatos-filtros', async (req, res) => {
     }
 
     // Obtener proveedores únicos (siempre todos)
-    const proveedoresDisponibles = await collection.distinct('proveedor', { tiene_precio_valido: true });
+    const proveedoresDisponibles = await collection.distinct('proveedor', { tiene_precio_valido: true, pausado: { $ne: true } });
 
     // Obtener categorías (filtradas si hay proveedores seleccionados)
     const categoriasDisponibles = await collection.distinct('categoria', query);
@@ -2805,7 +2805,7 @@ router.get('/exportar-excel', async (req, res) => {
     const collection = db.collection(COLLECTION_NAME);
 
     // 🆕 CONSTRUIR QUERY CON FILTROS
-    let query = { tiene_precio_valido: true };
+    let query = { tiene_precio_valido: true, pausado: { $ne: true } };
 
     // Filtro de proveedores
     if (proveedores) {
@@ -3335,8 +3335,8 @@ router.get('/categoria/:categoria/conteo', async (req, res) => {
 
     const subcategorias = CATEGORIAS[categoria] || null;
     const filtro = subcategorias
-      ? { categoria: { $in: subcategorias }, tiene_precio_valido: true }
-      : { categoria: categoria, tiene_precio_valido: true };
+      ? { categoria: { $in: subcategorias }, tiene_precio_valido: true, pausado: { $ne: true } }
+      : { categoria: categoria, tiene_precio_valido: true, pausado: { $ne: true } };
 
     const [total, agg] = await Promise.all([
       collection.countDocuments(filtro),
@@ -3379,8 +3379,8 @@ router.patch('/categoria/:categoria/precio-masivo', requireAdminKey, async (req,
     // Obtener los productos de la categoría para recalcular precio_lista_con_iva
     const subcategorias = CATEGORIAS[categoria] || null;
     const filtroCategoria = subcategorias
-      ? { categoria: { $in: subcategorias }, tiene_precio_valido: true }
-      : { categoria: categoria, tiene_precio_valido: true };
+      ? { categoria: { $in: subcategorias }, tiene_precio_valido: true, pausado: { $ne: true } }
+      : { categoria: categoria, tiene_precio_valido: true, pausado: { $ne: true } };
 
     const productos = await collection.find(filtroCategoria, {
       projection: { _id: 1, codigo: 1, precio_numerico: 1 }
@@ -3459,7 +3459,7 @@ router.post('/importar-precios', requireAdminKey, async (req, res) => {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
               }),
-              tiene_precio_valido: true
+              tiene_precio_valido: true, pausado: { $ne: true }
             }
           }
         }
@@ -3583,6 +3583,108 @@ router.post('/producto', requireAdminKey, async (req, res) => {
 
   } catch (error) {
     console.error('❌ [CREAR-PRODUCTO] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/producto/:codigo/pausar — Pausar o reactivar un producto individual
+// ---------------------------------------------------------------------------
+router.patch('/producto/:codigo/pausar', requireAdminKey, async (req, res) => {
+  try {
+    const { codigo } = req.params;
+    const { pausado } = req.body;
+
+    if (typeof pausado !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'El campo "pausado" debe ser true o false' });
+    }
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const result = await collection.updateOne(
+      { codigo: String(codigo) },
+      { $set: { pausado } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, error: `Producto con código "${codigo}" no encontrado` });
+    }
+
+    console.log(`✅ [PAUSAR-PRODUCTO] Código: ${codigo} — pausado: ${pausado}`);
+    res.json({ success: true, codigo, pausado });
+
+  } catch (error) {
+    console.error('❌ [PAUSAR-PRODUCTO] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/categoria/:categoria/pausar — Pausar o reactivar TODOS los
+// productos de una categoría (principal o subcategoría exacta) de una vez.
+// ---------------------------------------------------------------------------
+router.patch('/categoria/:categoria/pausar', requireAdminKey, async (req, res) => {
+  try {
+    const { categoria } = req.params;
+    const { pausado } = req.body;
+
+    if (typeof pausado !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'El campo "pausado" debe ser true o false' });
+    }
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    // Mismo criterio que /busqueda-filtrada: si es categoría principal, agrupa
+    // todas sus subcategorías; si no, se trata como subcategoría exacta.
+    const subcategorias = CATEGORIAS[categoria] || null;
+    const filtro = subcategorias
+      ? { categoria: { $in: subcategorias } }
+      : { categoria: categoria };
+
+    const result = await collection.updateMany(filtro, { $set: { pausado } });
+
+    console.log(`✅ [PAUSAR-CATEGORIA] "${categoria}" — pausado: ${pausado} — ${result.modifiedCount} productos afectados`);
+    res.json({
+      success: true,
+      categoria,
+      pausado,
+      productosAfectados: result.modifiedCount
+    });
+
+  } catch (error) {
+    console.error('❌ [PAUSAR-CATEGORIA] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/producto/:codigo — Buscar un producto por código incluyendo
+// pausados (para el panel admin, que necesita poder encontrarlo y reactivarlo).
+// ---------------------------------------------------------------------------
+router.get('/admin/producto/:codigo', requireAdminKey, async (req, res) => {
+  try {
+    const { codigo } = req.params;
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const producto = await collection.findOne(
+      { codigo: String(codigo) },
+      { projection: { _id: 0 } }
+    );
+
+    if (!producto) {
+      return res.status(404).json({ success: false, error: `Producto con código "${codigo}" no encontrado` });
+    }
+
+    res.json({ success: true, data: producto });
+
+  } catch (error) {
+    console.error('❌ [ADMIN-PRODUCTO] Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
