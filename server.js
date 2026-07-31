@@ -8,25 +8,29 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ===== MIDDLEWARE =====
-app.use(cors({
-  origin: [
-    // Dominios de producción
-    'https://bethersa.com.ar',
-    'https://www.bethersa.com.ar',
-    'https://bethersa.online',
-    'https://www.bethersa.online',
-    'https://bethersa.store',
-    'https://www.bethersa.store',
+const ORIGENES_PRODUCCION = [
+  'https://bethersa.com.ar',
+  'https://www.bethersa.com.ar',
+  'https://bethersa.online',
+  'https://www.bethersa.online',
+  'https://bethersa.store',
+  'https://www.bethersa.store'
+];
 
-    // Desarrollo local
-    'http://localhost:3000',
-    'http://localhost:5000',
-    'http://localhost:5173',
-    'http://127.0.0.1:5500',
-    'http://localhost:8080'
-  ],
+// En desarrollo el puerto de Vite cambia seguido (5173, 5184, ...), así que se
+// permite cualquier localhost/127.0.0.1 en vez de mantener una lista de puertos.
+const ORIGEN_LOCALHOST_DEV = /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/;
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // Requests sin origin (curl, apps móviles, etc.)
+    if (ORIGENES_PRODUCCION.includes(origin) || ORIGEN_LOCALHOST_DEV.test(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error('No permitido por CORS'));
+  },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Admin-Key'],
   credentials: true,
   optionsSuccessStatus: 200 // Para navegadores legacy
 }));
