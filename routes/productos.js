@@ -1803,27 +1803,19 @@ router.get('/busqueda-filtrada', async (req, res) => {
     // Construir condiciones de filtrado
     let matchConditions = { tiene_precio_valido: true };
 
-    // 🎯 FILTRO POR CATEGORÍA PRINCIPAL
+    // 🎯 FILTRO POR CATEGORÍA (principal o subcategoría exacta)
     if (categoria && categoria !== 'todos') {
-      // Verificar si es una categoría principal válida
       if (CATEGORIAS[categoria]) {
+        // Es una categoría principal: buscar en todas sus subcategorías.
         console.log(`🎯 Categoría principal: ${categoria}`);
         console.log(`📋 Buscando en subcategorías:`, CATEGORIAS[categoria]);
-
-        // Buscar en todas las subcategorías que pertenecen a esta categoría principal
         matchConditions.categoria = { $in: CATEGORIAS[categoria] };
       } else {
-        console.log(`⚠️ Categoría no reconocida: ${categoria}`);
-        // Si no es una categoría principal válida, no devolver resultados
-        return res.json({
-          success: true,
-          results: [],
-          count: 0,
-          totalResults: 0,
-          filtros: { categoria, marca, modelo, version },
-          error: `Categoría "${categoria}" no encontrada`,
-          timestamp: new Date().toISOString()
-        });
+        // No es una categoría principal: se usa como subcategoría literal
+        // (mismo criterio que /marcas, /modelos y /versiones, que ya aceptan
+        // cualquier valor de "categoria" tal cual sin validarlo contra CATEGORIAS).
+        console.log(`🎯 Subcategoría literal: ${categoria}`);
+        matchConditions.categoria = categoria;
       }
     }
 
