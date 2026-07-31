@@ -13,6 +13,15 @@ const COLLECTION_NAME = process.env.COLLECTION_NAME || "productos";
 const GOOGLE_MERCHANT_ID = process.env.GOOGLE_MERCHANT_ID;
 const GOOGLE_CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS || '{}');
 
+// ===== PROTECCIÓN DE ESCRITURA (mismo criterio que routes/productos.js) =====
+function requireAdminKey(req, res, next) {
+  const key = req.get('X-Admin-Key');
+  if (!process.env.ADMIN_API_KEY || key !== process.env.ADMIN_API_KEY) {
+    return res.status(401).json({ success: false, error: 'No autorizado' });
+  }
+  next();
+}
+
 // Cliente MongoDB reutilizable
 let cachedClient = null;
 
@@ -249,7 +258,7 @@ router.get('/test-transform/:codigo', async (req, res) => {
 });
 
 // 📤 Subir producto individual a Google Merchant
-router.post('/upload-product/:codigo', async (req, res) => {
+router.post('/upload-product/:codigo', requireAdminKey, async (req, res) => {
   try {
     const { codigo } = req.params;
     
@@ -294,7 +303,7 @@ router.post('/upload-product/:codigo', async (req, res) => {
 });
 
 // 📤 Subida masiva por lotes
-router.post('/upload-batch', async (req, res) => {
+router.post('/upload-batch', requireAdminKey, async (req, res) => {
   try {
     const { limit = 100, categoria = null } = req.body;
     
@@ -381,7 +390,7 @@ router.post('/upload-batch', async (req, res) => {
 });
 
 // 🔄 Sincronización completa
-router.post('/sync-all', async (req, res) => {
+router.post('/sync-all', requireAdminKey, async (req, res) => {
   try {
     const { dryRun = false } = req.body;
     

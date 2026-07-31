@@ -8,6 +8,17 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || "autopartes";
 const COLLECTION_NAME = process.env.COLLECTION_NAME || "productos";
 
+// ===== PROTECCIÓN DE ESCRITURA (panel admin) =====
+// Exige el header X-Admin-Key en las rutas que crean/editan/borran productos.
+// La clave vive en ADMIN_API_KEY (.env), nunca en el código.
+function requireAdminKey(req, res, next) {
+  const key = req.get('X-Admin-Key');
+  if (!process.env.ADMIN_API_KEY || key !== process.env.ADMIN_API_KEY) {
+    return res.status(401).json({ success: false, error: 'No autorizado' });
+  }
+  next();
+}
+
 // Cliente MongoDB reutilizable
 let cachedClient = null;
 
@@ -3219,7 +3230,7 @@ router.get('/producto/:codigo(*)', async (req, res) => {
 // ---------------------------------------------------------------------------
 // PATCH /api/producto/:codigo — Actualizar cualquier campo (body parcial)
 // ---------------------------------------------------------------------------
-router.patch('/producto/:codigo(*)', async (req, res) => {
+router.patch('/producto/:codigo(*)', requireAdminKey, async (req, res) => {
   try {
     const { codigo } = req.params;
     const body = req.body;
@@ -3355,7 +3366,7 @@ router.get('/categoria/:categoria/conteo', async (req, res) => {
 // ---------------------------------------------------------------------------
 // PATCH /api/categoria/:categoria/precio-masivo — Aumento % en una categoría
 // ---------------------------------------------------------------------------
-router.patch('/categoria/:categoria/precio-masivo', async (req, res) => {
+router.patch('/categoria/:categoria/precio-masivo', requireAdminKey, async (req, res) => {
   try {
     const { categoria } = req.params;
     const { porcentaje } = req.body;
@@ -3425,7 +3436,7 @@ router.patch('/categoria/:categoria/precio-masivo', async (req, res) => {
 // POST /api/importar-precios — Actualizar precios en lote desde array
 // Body: { productos: [{codigo, precio_numerico}] }
 // ---------------------------------------------------------------------------
-router.post('/importar-precios', async (req, res) => {
+router.post('/importar-precios', requireAdminKey, async (req, res) => {
   try {
     const { productos } = req.body;
 
@@ -3490,7 +3501,7 @@ router.post('/importar-precios', async (req, res) => {
 // ---------------------------------------------------------------------------
 // POST /api/producto — Crear un producto nuevo
 // ---------------------------------------------------------------------------
-router.post('/producto', async (req, res) => {
+router.post('/producto', requireAdminKey, async (req, res) => {
   try {
     const body = req.body;
 
