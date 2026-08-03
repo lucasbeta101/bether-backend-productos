@@ -2798,7 +2798,21 @@ router.get('/exportar-excel', async (req, res) => {
     console.log('📊 [EXCEL] Iniciando exportación optimizada...');
 
     // 🆕 LEER PARÁMETROS DE FILTRADO
-    const { proveedores, categorias } = req.query;
+    const { proveedores, categorias, descuentos } = req.query;
+
+    // 🆕 Descuentos por categoría (mayorista): mapa { "NombreCategoria": porcentaje }.
+    // Lo arma y manda la Cloud Function de Nueva-web (que lee descuentosPorCategoria
+    // + descuentosPersonalizados de Firestore) — este backend no sabe nada de
+    // Firebase, solo aplica el % que le llega. Sin este parámetro, exporta el
+    // precio de lista sin descuento (comportamiento anterior, sin cambios).
+    let mapaDescuentos = {};
+    if (descuentos) {
+      try {
+        mapaDescuentos = JSON.parse(descuentos);
+      } catch (e) {
+        return res.status(400).json({ success: false, error: 'Parámetro "descuentos" inválido (debe ser JSON).' });
+      }
+    }
 
     const client = await connectToMongoDB();
     const db = client.db(DB_NAME);
@@ -2912,22 +2926,46 @@ router.get('/exportar-excel', async (req, res) => {
       filaFecha.height = 20;
       filaActual += 2;
 
-      // CONFIGURAR COLUMNAS
-      worksheet.columns = [
-        { key: 'codigo', width: 15 },
-        { key: 'descripcion', width: 50 },
-        { key: 'stock', width: 15 },
-        { key: 'precio', width: 15 },
-        { key: 'tipo', width: 10 }
-      ];
+      // 🆕 CONFIGURAR COLUMNAS — si hay descuentos, se agregan 2 columnas
+      // informativas (precio de lista y % aplicado) además del precio final
+      // que sigue yendo en la columna D, para no romper los merges A:D que
+      // ya usan las filas de marca/modelo/categoría más abajo.
+      const hayDescuentos = Object.keys(mapaDescuentos).length > 0;
+      worksheet.columns = hayDescuentos
+        ? [
+          { key: 'codigo', width: 15 },
+          { key: 'descripcion', width: 50 },
+          { key: 'stock', width: 15 },
+          { key: 'precio', width: 16 },
+          { key: 'tipo', width: 10 },
+          { key: 'precioLista', width: 16 },
+          { key: 'descuentoPct', width: 12 }
+        ]
+        : [
+          { key: 'codigo', width: 15 },
+          { key: 'descripcion', width: 50 },
+          { key: 'stock', width: 15 },
+          { key: 'precio', width: 15 },
+          { key: 'tipo', width: 10 }
+        ];
 
       // ENCABEZADO
       const headerRow = worksheet.getRow(filaActual);
       headerRow.getCell('A').value = 'Código';
       headerRow.getCell('B').value = 'Descripción';
       headerRow.getCell('C').value = 'Stock';
-      headerRow.getCell('D').value = 'Precio sin IVA';
+      headerRow.getCell('D').value = hayDescuentos ? 'Precio final s/IVA' : 'Precio sin IVA';
       headerRow.getCell('E').value = 'Tipo';
+      if (hayDescuentos) {
+        headerRow.getCell('F').value = 'Precio lista s/IVA';
+        headerRow.getCell('G').value = 'Descuento';
+        ['F', 'G'].forEach(col => {
+          const cell = headerRow.getCell(col);
+          cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF366092' } };
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        });
+      }
 
       ['A', 'B', 'C', 'D'].forEach(col => {
         const cell = headerRow.getCell(col);
@@ -3021,14 +3059,24 @@ router.get('/exportar-excel', async (req, res) => {
             modelosCompatibles.forEach(m => productoExistente.modelos.add(m));
           } else {
             const precio = p.precio_numerico || p.precio_lista_con_iva || 0;
-            const precioSinIVA = (precio / 1.21).toFixed(2);
+            const precioListaSinIVA = precio / 1.21;
+            const categoriaProd = p.categoria || 'Sin Categoría';
+
+            // 🆕 Si hay % de descuento para esta categoría, el precio final
+            // ya sale con el descuento aplicado (mismo criterio que
+            // calcularPrecio() en Nueva-web: factor = 1 - %/100, aplicado
+            // directo sobre el precio sin IVA, sin redondeos intermedios).
+            const descuentoPct = mapaDescuentos[categoriaProd] ?? 0;
+            const precioFinalSinIVA = precioListaSinIVA * (1 - descuentoPct / 100);
 
             productosUnicos.set(claveUnica, {
               codigo: p.codigo,
               descripcion: p.nombre,
               stock: p.stock_status || 'Sin información',
-              precio: `$${precioSinIVA}`,
-              categoria: p.categoria || 'Sin Categoría',
+              precio: `$${precioFinalSinIVA.toFixed(2)}`,
+              precioLista: `$${precioListaSinIVA.toFixed(2)}`,
+              descuentoPct: descuentoPct > 0 ? `${descuentoPct}%` : '—',
+              categoria: categoriaProd,
               modelos: new Set(modelosCompatibles)
             });
           }
@@ -3051,7 +3099,9 @@ router.get('/exportar-excel', async (req, res) => {
               codigo: producto.codigo,
               descripcion: producto.descripcion,
               stock: producto.stock,
-              precio: producto.precio
+              precio: producto.precio,
+              precioLista: producto.precioLista,
+              descuentoPct: producto.descuentoPct
             });
           });
         });
@@ -3111,6 +3161,10 @@ router.get('/exportar-excel', async (req, res) => {
               filaProd.getCell('stock').value = prod.stock;
               filaProd.getCell('precio').value = prod.precio;
               filaProd.getCell('tipo').value = 'PRODUCTO';
+              if (hayDescuentos) {
+                filaProd.getCell('precioLista').value = prod.precioLista;
+                filaProd.getCell('descuentoPct').value = prod.descuentoPct;
+              }
               filaProd.alignment = { vertical: 'middle' };
               filaActual++;
             });
