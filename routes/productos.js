@@ -2895,6 +2895,13 @@ router.get('/exportar-excel', async (req, res) => {
 
       let filaActual = 1;
 
+      // 🆕 Si hay descuentos, se agregan 2 columnas (precio de lista y %
+      // aplicado) ANTES del precio final, orden Lista → Descuento → Final.
+      // Calculado antes de todo lo demás porque título/fecha/separadores de
+      // marca-modelo-categoría necesitan mergear hasta la última columna real.
+      const hayDescuentos = Object.keys(mapaDescuentos).length > 0;
+      const ULTIMA_COL = hayDescuentos ? 'F' : 'D';
+
       // AGREGAR LOGO
       if (logoId !== undefined) {
         worksheet.addImage(logoId, {
@@ -2912,7 +2919,7 @@ router.get('/exportar-excel', async (req, res) => {
       // TÍTULO Y FECHA
       const filaTitulo = worksheet.getRow(filaActual);
       filaTitulo.getCell('A').value = 'LISTA DE PRECIOS - BETHERSA';
-      worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
+      worksheet.mergeCells(`A${filaActual}:${ULTIMA_COL}${filaActual}`);
       filaTitulo.font = { bold: true, size: 14, color: { argb: 'FF000000' } };
       filaTitulo.alignment = { horizontal: 'center', vertical: 'middle' };
       filaTitulo.height = 25;
@@ -2920,26 +2927,22 @@ router.get('/exportar-excel', async (req, res) => {
 
       const filaFecha = worksheet.getRow(filaActual);
       filaFecha.getCell('A').value = `Fecha: ${new Date().toLocaleDateString('es-AR')}`;
-      worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
+      worksheet.mergeCells(`A${filaActual}:${ULTIMA_COL}${filaActual}`);
       filaFecha.font = { size: 11, color: { argb: 'FF666666' } };
       filaFecha.alignment = { horizontal: 'center', vertical: 'middle' };
       filaFecha.height = 20;
       filaActual += 2;
 
-      // 🆕 CONFIGURAR COLUMNAS — si hay descuentos, se agregan 2 columnas
-      // informativas (precio de lista y % aplicado) además del precio final
-      // que sigue yendo en la columna D, para no romper los merges A:D que
-      // ya usan las filas de marca/modelo/categoría más abajo.
-      const hayDescuentos = Object.keys(mapaDescuentos).length > 0;
+      // CONFIGURAR COLUMNAS
       worksheet.columns = hayDescuentos
         ? [
           { key: 'codigo', width: 15 },
           { key: 'descripcion', width: 50 },
           { key: 'stock', width: 15 },
-          { key: 'precio', width: 16 },
-          { key: 'tipo', width: 10 },
           { key: 'precioLista', width: 16 },
-          { key: 'descuentoPct', width: 12 }
+          { key: 'descuentoPct', width: 12 },
+          { key: 'precio', width: 16 },
+          { key: 'tipo', width: 10 }
         ]
         : [
           { key: 'codigo', width: 15 },
@@ -2954,20 +2957,18 @@ router.get('/exportar-excel', async (req, res) => {
       headerRow.getCell('A').value = 'Código';
       headerRow.getCell('B').value = 'Descripción';
       headerRow.getCell('C').value = 'Stock';
-      headerRow.getCell('D').value = hayDescuentos ? 'Precio final s/IVA' : 'Precio sin IVA';
-      headerRow.getCell('E').value = 'Tipo';
       if (hayDescuentos) {
-        headerRow.getCell('F').value = 'Precio lista s/IVA';
-        headerRow.getCell('G').value = 'Descuento';
-        ['F', 'G'].forEach(col => {
-          const cell = headerRow.getCell(col);
-          cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF366092' } };
-          cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        });
+        headerRow.getCell('D').value = 'Precio lista s/IVA';
+        headerRow.getCell('E').value = 'Descuento';
+        headerRow.getCell('F').value = 'Precio final s/IVA';
+        headerRow.getCell('G').value = 'Tipo';
+      } else {
+        headerRow.getCell('D').value = 'Precio sin IVA';
+        headerRow.getCell('E').value = 'Tipo';
       }
 
-      ['A', 'B', 'C', 'D'].forEach(col => {
+      ['A', 'B', 'C', 'D', 'E', 'F'].forEach(col => {
+        if (col > ULTIMA_COL) return;
         const cell = headerRow.getCell(col);
         cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
         cell.fill = {
@@ -2999,7 +3000,7 @@ router.get('/exportar-excel', async (req, res) => {
         filaMarca.getCell('codigo').value = `*** ${marca} ***`;
         filaMarca.getCell('tipo').value = 'MARCA';
 
-        worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
+        worksheet.mergeCells(`A${filaActual}:${ULTIMA_COL}${filaActual}`);
 
         const celdaMarca = filaMarca.getCell('A');
         celdaMarca.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
@@ -3117,7 +3118,7 @@ router.get('/exportar-excel', async (req, res) => {
           filaModelo.getCell('codigo').value = `  >> ${modelo}`;
           filaModelo.getCell('tipo').value = 'MODELO';
 
-          worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
+          worksheet.mergeCells(`A${filaActual}:${ULTIMA_COL}${filaActual}`);
 
           const celdaModelo = filaModelo.getCell('A');
           celdaModelo.font = { bold: true, size: 11, color: { argb: 'FF000000' } };
@@ -3138,7 +3139,7 @@ router.get('/exportar-excel', async (req, res) => {
             filaCategoria.getCell('codigo').value = `    • ${categoria}`;
             filaCategoria.getCell('tipo').value = 'CATEGORIA';
 
-            worksheet.mergeCells(`A${filaActual}:D${filaActual}`);
+            worksheet.mergeCells(`A${filaActual}:${ULTIMA_COL}${filaActual}`);
 
             const celdaCategoria = filaCategoria.getCell('A');
             celdaCategoria.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
