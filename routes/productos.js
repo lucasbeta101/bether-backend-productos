@@ -3220,6 +3220,42 @@ router.get('/producto/:codigo(*)', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// PATCH /api/producto/:codigo/pausar — Pausar o reactivar un producto individual
+// (declarada ANTES de /producto/:codigo(*) a propósito: ese patrón captura
+// cualquier sufijo, así que si esta ruta fuera después nunca se alcanzaría.)
+// ---------------------------------------------------------------------------
+router.patch('/producto/:codigo/pausar', requireAdminKey, async (req, res) => {
+  try {
+    const { codigo } = req.params;
+    const { pausado } = req.body;
+
+    if (typeof pausado !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'El campo "pausado" debe ser true o false' });
+    }
+
+    const client = await connectToMongoDB();
+    const db = client.db(DB_NAME);
+    const collection = db.collection(COLLECTION_NAME);
+
+    const result = await collection.updateOne(
+      { codigo: String(codigo) },
+      { $set: { pausado } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, error: `Producto con código "${codigo}" no encontrado` });
+    }
+
+    console.log(`✅ [PAUSAR-PRODUCTO] Código: ${codigo} — pausado: ${pausado}`);
+    res.json({ success: true, codigo, pausado });
+
+  } catch (error) {
+    console.error('❌ [PAUSAR-PRODUCTO] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // PATCH /api/producto/:codigo — Actualizar cualquier campo (body parcial)
 // ---------------------------------------------------------------------------
 router.patch('/producto/:codigo(*)', requireAdminKey, async (req, res) => {
@@ -3583,40 +3619,6 @@ router.post('/producto', requireAdminKey, async (req, res) => {
 
   } catch (error) {
     console.error('❌ [CREAR-PRODUCTO] Error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// PATCH /api/producto/:codigo/pausar — Pausar o reactivar un producto individual
-// ---------------------------------------------------------------------------
-router.patch('/producto/:codigo/pausar', requireAdminKey, async (req, res) => {
-  try {
-    const { codigo } = req.params;
-    const { pausado } = req.body;
-
-    if (typeof pausado !== 'boolean') {
-      return res.status(400).json({ success: false, error: 'El campo "pausado" debe ser true o false' });
-    }
-
-    const client = await connectToMongoDB();
-    const db = client.db(DB_NAME);
-    const collection = db.collection(COLLECTION_NAME);
-
-    const result = await collection.updateOne(
-      { codigo: String(codigo) },
-      { $set: { pausado } }
-    );
-
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ success: false, error: `Producto con código "${codigo}" no encontrado` });
-    }
-
-    console.log(`✅ [PAUSAR-PRODUCTO] Código: ${codigo} — pausado: ${pausado}`);
-    res.json({ success: true, codigo, pausado });
-
-  } catch (error) {
-    console.error('❌ [PAUSAR-PRODUCTO] Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
