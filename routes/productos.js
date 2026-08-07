@@ -915,6 +915,11 @@ router.post('/busqueda-codigos-lote', async (req, res) => {
     // Buscar todos los productos en una sola consulta
     const startTime = Date.now();
 
+    // 🆕 precio_numerico, imagen y stock_status: los necesita el carrito de
+    // Nueva-web (getItemsConDetalle() en carrito.js) para no tener que pegarle
+    // a /metadatos completo (7MB+, ~8s) solo para resolver unos pocos códigos
+    // del carrito — este endpoint ya hacía la búsqueda liviana correcta, solo
+    // le faltaban estos 3 campos en la proyección.
     const productos = await collection.find(
       {
         codigo: { $in: codigosLimpios },
@@ -928,6 +933,10 @@ router.post('/busqueda-codigos-lote', async (req, res) => {
           categoria: 1,
           marca: 1,
           precio_lista_con_iva: 1,
+          precio_numerico: 1,
+          imagen: 1,
+          imagenes: 1,
+          stock_status: 1,
           aplicaciones: 1,
           detalles_tecnicos: 1
         }
