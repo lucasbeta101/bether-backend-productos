@@ -942,6 +942,7 @@ router.post('/busqueda-codigos-lote', async (req, res) => {
           imagen: 1,
           imagenes: 1,
           stock_status: 1,
+          proveedor: 1,
           aplicaciones: 1,
           detalles_tecnicos: 1
         }
