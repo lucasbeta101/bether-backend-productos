@@ -457,7 +457,12 @@ function buildSearchPipeline(parsedQuery, limit, offset) {
       $or: [
         { codigo: parsedQuery.exactCode },
         { codigo: { $regex: parsedQuery.exactCode, $options: 'i' } },
-        { nombre: { $regex: parsedQuery.exactCode, $options: 'i' } }
+        { nombre: { $regex: parsedQuery.exactCode, $options: 'i' } },
+        // 🆕 Código de otra marca que equivale a este producto (ej. cliente
+        // busca por el código que tiene anotado de un repuesto de otra marca
+        // que compró antes) — equivalencias es array de {marca, codigo}.
+        { "equivalencias.codigo": parsedQuery.exactCode },
+        { "equivalencias.codigo": { $regex: parsedQuery.exactCode, $options: 'i' } }
       ]
     };
 
